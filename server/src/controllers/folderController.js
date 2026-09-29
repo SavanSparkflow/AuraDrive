@@ -51,21 +51,22 @@ const getFolders = async (req, res) => {
   try {
     const parentId = req.query.parentId && req.query.parentId !== 'root' ? req.query.parentId : null;
     const isTrashed = req.query.trashed === 'true';
+    const isAll = req.query.all === 'true';
 
     let filter = {
       owner: req.user._id,
       isTrashed
     };
 
-    if (!isTrashed) {
+    if (!isTrashed && !isAll) {
       filter.parentFolder = parentId;
     }
 
-    const folders = await Folder.find(filter).sort({ createdAt: -1 });
+    const folders = await Folder.find(filter).sort({ name: 1, createdAt: -1 });
 
     // If viewing inside a folder, also get the folder info and breadcrumbs
     let currentFolder = null;
-    if (parentId && !isTrashed) {
+    if (parentId && !isTrashed && !isAll) {
       currentFolder = await Folder.findOne({ _id: parentId, owner: req.user._id });
     }
 
