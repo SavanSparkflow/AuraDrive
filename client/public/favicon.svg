@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="auraGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B5CF6" />
+      <stop offset="100%" stop-color="#6D28D9" />
+    </linearGradient>
+  </defs>
+  <rect width="48" height="48" rx="12" fill="url(#auraGrad)"/>
+  <path d="M14 26C14 21.5817 17.5817 18 22 18C23.016 18 23.9856 18.1895 24.8778 18.5363C26.1754 15.8236 28.9482 14 32.1429 14C36.4822 14 40 17.5178 40 21.8571C40 22.3688 39.9515 22.8687 39.8587 23.3533C40.548 24.1206 41 25.1328 41 26.25C41 28.5972 39.0972 30.5 36.75 30.5L18.5 30.5C14.9101 30.5 12 27.5899 12 24C12 20.6863 14.6863 18 18 18" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>
+  <circle cx="28" cy="24" r="3" fill="#EDE9FE"/>
+</svg>

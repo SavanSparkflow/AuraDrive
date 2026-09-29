@@ -1,0 +1,14 @@
+{
+  "name": "auradrive",
+  "version": "1.0.0",
+  "description": "AuraDrive - Google Drive Clone with MERN Stack & Cloudinary",
+  "scripts": {
+    "server": "npm --prefix server run dev",
+    "client": "npm --prefix client run dev",
+    "install:all": "npm --prefix server install && npm --prefix client install",
+    "start": "npm run server"
+  },
+  "keywords": ["google-drive-clone", "mern", "cloudinary", "cloud-storage"],
+  "author": "",
+  "license": "MIT"
+}
