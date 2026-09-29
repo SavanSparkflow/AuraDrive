@@ -40,6 +40,7 @@ export const useDriveStore = create((set, get) => ({
   isCreateFolderOpen: false,
   versionHistoryItem: null, // File object currently being inspected for versions
   tagModalItem: null, // { item, type: 'file' | 'folder', isBulk?: boolean }
+  moveModalItem: null, // { item, type: 'file' | 'folder', isBulk?: boolean }
   isDownloadingZip: false,
 
   // Setters
@@ -57,6 +58,7 @@ export const useDriveStore = create((set, get) => ({
   setIsCreateFolderOpen: (isOpen) => set({ isCreateFolderOpen: isOpen }),
   setVersionHistoryItem: (item) => set({ versionHistoryItem: item }),
   setTagModalItem: (item) => set({ tagModalItem: item }),
+  setMoveModalItem: (item) => set({ moveModalItem: item }),
 
   // --- SELECTION ACTIONS ---
   toggleSelectItem: (id, type, isMulti = false) => {
@@ -494,6 +496,68 @@ export const useDriveStore = create((set, get) => ({
       toast.success('Selected items permanently deleted');
     } catch (err) {
       toast.error('Bulk permanent delete failed');
+    }
+  },
+
+  // --- MOVE ACTIONS ---
+  moveItemAction: async (id, type, targetFolderId = null, targetFolderName = 'target folder') => {
+    try {
+      if (type === 'folder') {
+        await api.put(`/folders/${id}/move`, { targetParentId: targetFolderId });
+        set((state) => ({
+          folders: state.folders.filter((f) => f._id !== id)
+        }));
+      } else {
+        await api.put(`/files/${id}/move`, { targetFolderId });
+        set((state) => ({
+          files: state.files.filter((f) => f._id !== id)
+        }));
+      }
+
+      toast.success(`Moved to ${targetFolderName}`);
+      set({ moveModalItem: null });
+      return { success: true };
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Move operation failed';
+      toast.error(msg);
+      return { success: false, message: msg };
+    }
+  },
+
+  bulkMoveAction: async (targetFolderId = null, targetFolderName = 'target folder') => {
+    const { selectedFileIds, selectedFolderIds } = get();
+    if (selectedFileIds.length === 0 && selectedFolderIds.length === 0) return;
+
+    try {
+      await api.post('/files/bulk-move', {
+        fileIds: selectedFileIds,
+        folderIds: selectedFolderIds,
+        targetFolderId
+      });
+
+      set((state) => ({
+        files: state.files.filter((f) => !selectedFileIds.includes(f._id)),
+        folders: state.folders.filter((f) => !selectedFolderIds.includes(f._id)),
+        selectedFileIds: [],
+        selectedFolderIds: [],
+        moveModalItem: null
+      }));
+
+      toast.success(`Items moved to ${targetFolderName}`);
+      return { success: true };
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Bulk move failed';
+      toast.error(msg);
+      return { success: false, message: msg };
+    }
+  },
+
+  getAllFolders: async () => {
+    try {
+      const res = await api.get('/folders');
+      return res.data.folders || [];
+    } catch (err) {
+      return [];
     }
   },
 

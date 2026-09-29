@@ -11,6 +11,7 @@ import FilePreviewModal from '../drive/FilePreviewModal';
 import DeleteConfirmModal from '../drive/DeleteConfirmModal';
 import VersionHistoryModal from '../drive/VersionHistoryModal';
 import TagModal from '../drive/TagModal';
+import MoveModal from '../drive/MoveModal';
 import UploadArea from '../drive/UploadArea';
 import { useDriveStore } from '../../store/driveStore';
 
@@ -96,6 +97,7 @@ export default function AppLayout() {
       <DeleteConfirmModal />
       <VersionHistoryModal />
       <TagModal />
+      <MoveModal />
     </div>
   );
 }

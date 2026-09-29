@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Folder as FolderIcon,
@@ -10,6 +10,8 @@ import {
   ExternalLink,
   Download,
   Tag as TagIcon,
+  FolderOpen,
+  ArrowDownCircle,
   Check
 } from 'lucide-react';
 import Dropdown, { DropdownItem, DropdownDivider } from '../common/Dropdown';
@@ -26,10 +28,13 @@ export default function FolderCard({ folder, viewMode = 'grid', isTrashView = fa
     setDeleteConfirmItem,
     downloadFolderZipAction,
     setTagModalItem,
+    setMoveModalItem,
+    moveItemAction,
     selectedFolderIds,
     toggleSelectItem
   } = useDriveStore();
 
+  const [isDragOver, setIsDragOver] = useState(false);
   const isSelected = selectedFolderIds.includes(folder._id);
 
   const handleOpen = (e) => {
@@ -53,12 +58,58 @@ export default function FolderCard({ folder, viewMode = 'grid', isTrashView = fa
     downloadFolderZipAction(folder._id, folder.name);
   };
 
+  const handleDragStart = (e) => {
+    if (isTrashView) return;
+    const payload = JSON.stringify({ id: folder._id, name: folder.name, type: 'folder' });
+    e.dataTransfer.setData('application/json', payload);
+    e.dataTransfer.setData('text/plain', folder.name);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e) => {
+    if (isTrashView) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (isTrashView) return;
+
+    try {
+      const dataStr = e.dataTransfer.getData('application/json');
+      if (dataStr) {
+        const data = JSON.parse(dataStr);
+        if (data && data.id && data.id !== folder._id) {
+          moveItemAction(data.id, data.type, folder._id, folder.name);
+        }
+      }
+    } catch (err) {
+      console.error('Folder drop error:', err);
+    }
+  };
+
   const folderColor = folder.color || '#7C3AED';
 
   // --- GRID VIEW ---
   if (viewMode === 'grid') {
     return (
       <div
+        draggable={!isTrashView}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
         onDoubleClick={handleOpen}
         onClick={(e) => {
           if (e.ctrlKey || e.metaKey) {
@@ -67,7 +118,9 @@ export default function FolderCard({ folder, viewMode = 'grid', isTrashView = fa
           }
         }}
         className={`group relative border rounded-2xl p-4 transition-all duration-200 cursor-pointer select-none flex flex-col justify-between ${
-          isSelected
+          isDragOver
+            ? 'border-brand-600 ring-4 ring-brand-500/30 bg-brand-50 scale-[1.03] shadow-lg'
+            : isSelected
             ? 'border-brand-500 ring-2 ring-brand-500/30 bg-brand-50/30 shadow-md'
             : 'bg-white hover:bg-brand-50/40 border-slate-200/80 hover:border-brand-200 hover:shadow-card'
         }`}
@@ -134,6 +187,9 @@ export default function FolderCard({ folder, viewMode = 'grid', isTrashView = fa
                 <>
                   <DropdownItem icon={ExternalLink} onClick={handleOpen}>
                     Open Folder
+                  </DropdownItem>
+                  <DropdownItem icon={FolderOpen} onClick={() => setMoveModalItem({ item: folder, type: 'folder' })}>
+                    Move to...
                   </DropdownItem>
                   <DropdownItem icon={Download} onClick={handleDownloadZip}>
                     Download as ZIP
@@ -203,7 +259,14 @@ export default function FolderCard({ folder, viewMode = 'grid', isTrashView = fa
             </div>
           )}
 
-          <p className="text-[11px] text-slate-400 mt-1">{formatDate(folder.updatedAt, true)}</p>
+          {isDragOver ? (
+            <p className="text-[11px] text-brand-700 font-bold mt-1 flex items-center gap-1 animate-pulse">
+              <ArrowDownCircle className="w-3.5 h-3.5" />
+              <span>Drop to move inside</span>
+            </p>
+          ) : (
+            <p className="text-[11px] text-slate-400 mt-1">{formatDate(folder.updatedAt, true)}</p>
+          )}
         </div>
       </div>
     );
@@ -212,6 +275,11 @@ export default function FolderCard({ folder, viewMode = 'grid', isTrashView = fa
   // --- LIST VIEW ---
   return (
     <div
+      draggable={!isTrashView}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       onDoubleClick={handleOpen}
       onClick={(e) => {
         if (e.ctrlKey || e.metaKey) {
@@ -220,7 +288,9 @@ export default function FolderCard({ folder, viewMode = 'grid', isTrashView = fa
         }
       }}
       className={`group flex items-center justify-between px-4 py-3 border-b transition-colors select-none cursor-pointer ${
-        isSelected
+        isDragOver
+          ? 'border-brand-600 bg-brand-100/80 ring-2 ring-brand-500'
+          : isSelected
           ? 'bg-brand-50/50 border-brand-200'
           : 'bg-white hover:bg-brand-50/40 border-slate-100'
       }`}
@@ -235,7 +305,7 @@ export default function FolderCard({ folder, viewMode = 'grid', isTrashView = fa
               : 'border border-slate-300 opacity-0 group-hover:opacity-100 hover:border-brand-500 text-slate-400'
           }`}
         >
-          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+          {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
         </div>
 
         <div
@@ -248,6 +318,13 @@ export default function FolderCard({ folder, viewMode = 'grid', isTrashView = fa
           <p className="text-sm font-semibold text-slate-800 truncate group-hover:text-brand-700">
             {folder.name}
           </p>
+
+          {isDragOver && (
+            <span className="text-[11px] text-brand-700 font-bold bg-brand-200/80 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+              <ArrowDownCircle className="w-3 h-3" />
+              <span>Drop to move</span>
+            </span>
+          )}
 
           {folder.tags && folder.tags.length > 0 && (
             <div className="hidden sm:flex items-center gap-1">
@@ -301,6 +378,9 @@ export default function FolderCard({ folder, viewMode = 'grid', isTrashView = fa
               <>
                 <DropdownItem icon={ExternalLink} onClick={handleOpen}>
                   Open Folder
+                </DropdownItem>
+                <DropdownItem icon={FolderOpen} onClick={() => setMoveModalItem({ item: folder, type: 'folder' })}>
+                  Move to...
                 </DropdownItem>
                 <DropdownItem icon={Download} onClick={handleDownloadZip}>
                   Download as ZIP

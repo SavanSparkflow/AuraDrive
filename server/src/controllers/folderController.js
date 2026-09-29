@@ -266,6 +266,69 @@ const updateFolderTags = async (req, res) => {
   }
 };
 
+// @desc    Move a folder to another parent folder (or root)
+// @route   PUT /api/folders/:id/move
+// @access  Private
+const moveFolder = async (req, res) => {
+  try {
+    const { targetParentId } = req.body;
+    const folderId = req.params.id;
+
+    if (targetParentId && targetParentId.toString() === folderId.toString()) {
+      return res.status(400).json({ success: false, message: 'Cannot move folder into itself' });
+    }
+
+    const folder = await Folder.findOne({ _id: folderId, owner: req.user._id });
+    if (!folder) {
+      return res.status(404).json({ success: false, message: 'Folder not found' });
+    }
+
+    const cleanParentId = targetParentId && targetParentId !== 'root' && targetParentId !== 'null' && targetParentId !== 'undefined'
+      ? targetParentId
+      : null;
+
+    let newPath = [];
+    if (cleanParentId) {
+      const parent = await Folder.findOne({ _id: cleanParentId, owner: req.user._id, isTrashed: false });
+      if (!parent) {
+        return res.status(404).json({ success: false, message: 'Target parent folder not found' });
+      }
+
+      // Check if target is inside the folder itself
+      const isDescendant = parent.path && parent.path.some((p) => p._id.toString() === folderId.toString());
+      if (isDescendant) {
+        return res.status(400).json({ success: false, message: 'Cannot move folder into one of its own subfolders' });
+      }
+
+      newPath = [...(parent.path || []), { _id: parent._id, name: parent.name }];
+    }
+
+    folder.parentFolder = cleanParentId;
+    folder.path = newPath;
+    await folder.save();
+
+    // Update child subfolder paths
+    const children = await Folder.find({ 'path._id': folder._id, owner: req.user._id });
+    for (const child of children) {
+      const idx = child.path.findIndex((p) => p._id.toString() === folder._id.toString());
+      if (idx !== -1) {
+        const tail = child.path.slice(idx);
+        child.path = [...newPath, ...tail];
+        await child.save();
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Folder moved successfully',
+      folder
+    });
+  } catch (error) {
+    console.error('Move folder error:', error);
+    res.status(500).json({ success: false, message: 'Server error moving folder' });
+  }
+};
+
 module.exports = {
   createFolder,
   getFolders,
@@ -274,5 +337,6 @@ module.exports = {
   toggleStarFolder,
   trashFolder,
   deleteFolderPermanently,
-  updateFolderTags
+  updateFolderTags,
+  moveFolder
 };

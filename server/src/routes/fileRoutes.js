@@ -24,7 +24,9 @@ const {
   bulkTrash,
   bulkDelete,
   downloadZip,
-  uploadChunk
+  uploadChunk,
+  moveFile,
+  bulkMove
 } = require('../controllers/fileController');
 const { protect } = require('../middlewares/authMiddleware');
 const { upload } = require('../middlewares/uploadMiddleware');
@@ -44,6 +46,7 @@ router.post('/bulk-star', bulkStar);
 router.post('/bulk-trash', bulkTrash);
 router.post('/bulk-delete', bulkDelete);
 router.post('/bulk-tag', bulkTag);
+router.post('/bulk-move', bulkMove);
 
 router.get('/', getFiles);
 router.get('/starred', getStarredItems);
@@ -68,5 +71,6 @@ router.put('/:id/rename', renameFile);
 router.put('/:id/star', toggleStarFile);
 router.put('/:id/trash', trashFile);
 router.put('/:id/share', shareFile);
+router.put('/:id/move', moveFile);
 
 module.exports = router;

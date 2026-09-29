@@ -10,6 +10,7 @@ import {
   Eye,
   History,
   Tag as TagIcon,
+  FolderOpen,
   Check
 } from 'lucide-react';
 import { getFileIcon, getFileTypeCategory } from '../../utils/fileHelpers';
@@ -29,6 +30,7 @@ export default function FileCard({ file, viewMode = 'grid', isTrashView = false 
     setDeleteConfirmItem,
     setVersionHistoryItem,
     setTagModalItem,
+    setMoveModalItem,
     selectedFileIds,
     toggleSelectItem
   } = useDriveStore();
@@ -66,10 +68,20 @@ export default function FileCard({ file, viewMode = 'grid', isTrashView = false 
     toggleSelectItem(file._id, 'file', true);
   };
 
+  const handleDragStart = (e) => {
+    if (isTrashView) return;
+    const payload = JSON.stringify({ id: file._id, name: file.name, type: 'file' });
+    e.dataTransfer.setData('application/json', payload);
+    e.dataTransfer.setData('text/plain', file.name);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
   // --- GRID VIEW ---
   if (viewMode === 'grid') {
     return (
       <div
+        draggable={!isTrashView}
+        onDragStart={handleDragStart}
         onClick={handlePreview}
         className={`group relative bg-white border rounded-2xl transition-all duration-200 cursor-pointer select-none flex flex-col justify-between ${
           isSelected
@@ -84,11 +96,11 @@ export default function FileCard({ file, viewMode = 'grid', isTrashView = false 
               <img
                 src={file.url}
                 alt={file.name}
-                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 pointer-events-none"
                 loading="lazy"
               />
             ) : (
-              <div className={`p-4 rounded-2xl ${iconMeta.bg} ${iconMeta.color} shadow-xs transition-transform group-hover:scale-110`}>
+              <div className={`p-4 rounded-2xl ${iconMeta.bg} ${iconMeta.color} shadow-xs transition-transform group-hover:scale-110 pointer-events-none`}>
                 <Icon className="w-10 h-10" />
               </div>
             )}
@@ -171,6 +183,9 @@ export default function FileCard({ file, viewMode = 'grid', isTrashView = false 
                 <>
                   <DropdownItem icon={Eye} onClick={handlePreview}>
                     Preview
+                  </DropdownItem>
+                  <DropdownItem icon={FolderOpen} onClick={() => setMoveModalItem({ item: file, type: 'file' })}>
+                    Move to...
                   </DropdownItem>
                   <DropdownItem icon={History} onClick={() => setVersionHistoryItem(file)}>
                     Version History {hasMultipleVersions ? `(v${file.currentVersion})` : ''}
@@ -256,6 +271,8 @@ export default function FileCard({ file, viewMode = 'grid', isTrashView = false 
   // --- LIST VIEW ---
   return (
     <div
+      draggable={!isTrashView}
+      onDragStart={handleDragStart}
       onClick={handlePreview}
       className={`group flex items-center justify-between px-4 py-3 border-b transition-colors select-none cursor-pointer ${
         isSelected
@@ -352,6 +369,9 @@ export default function FileCard({ file, viewMode = 'grid', isTrashView = false 
               <>
                 <DropdownItem icon={Eye} onClick={handlePreview}>
                   Preview
+                </DropdownItem>
+                <DropdownItem icon={FolderOpen} onClick={() => setMoveModalItem({ item: file, type: 'file' })}>
+                  Move to...
                 </DropdownItem>
                 <DropdownItem icon={History} onClick={() => setVersionHistoryItem(file)}>
                   Version History {hasMultipleVersions ? `(v${file.currentVersion})` : ''}

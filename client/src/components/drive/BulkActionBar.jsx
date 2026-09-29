@@ -4,6 +4,7 @@ import {
   Star,
   Trash2,
   Tag as TagIcon,
+  FolderInput,
   X,
   RotateCcw,
   CheckSquare,
@@ -22,6 +23,7 @@ export default function BulkActionBar({ isTrashView = false }) {
     bulkTrashAction,
     bulkDeleteAction,
     setTagModalItem,
+    setMoveModalItem,
     isDownloadingZip
   } = useDriveStore();
 
@@ -68,6 +70,16 @@ export default function BulkActionBar({ isTrashView = false }) {
             >
               <TagIcon className="w-3.5 h-3.5 text-purple-400" />
               <span>Tag</span>
+            </button>
+
+            {/* Move All */}
+            <button
+              type="button"
+              onClick={() => setMoveModalItem({ isBulk: true })}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors"
+            >
+              <FolderInput className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Move</span>
             </button>
 
             {/* Star All */}

@@ -1103,6 +1103,108 @@ const uploadChunk = async (req, res) => {
   }
 };
 
+// @desc    Move file to another folder
+// @route   PUT /api/files/:id/move
+// @access  Private
+const moveFile = async (req, res) => {
+  try {
+    const { targetFolderId } = req.body;
+    const cleanFolderId = targetFolderId && targetFolderId !== 'root' && targetFolderId !== 'null' && targetFolderId !== 'undefined'
+      ? targetFolderId
+      : null;
+
+    const file = await File.findOne({ _id: req.params.id, owner: req.user._id });
+    if (!file) {
+      return res.status(404).json({ success: false, message: 'File not found' });
+    }
+
+    if (cleanFolderId) {
+      const folder = await Folder.findOne({ _id: cleanFolderId, owner: req.user._id, isTrashed: false });
+      if (!folder) {
+        return res.status(404).json({ success: false, message: 'Destination folder not found' });
+      }
+    }
+
+    file.folderId = cleanFolderId;
+    await file.save();
+
+    res.json({
+      success: true,
+      message: 'File moved successfully',
+      file
+    });
+  } catch (error) {
+    console.error('Move file error:', error);
+    res.status(500).json({ success: false, message: 'Server error moving file' });
+  }
+};
+
+// @desc    Bulk Move files and folders to a target folder
+// @route   POST /api/files/bulk-move
+// @access  Private
+const bulkMove = async (req, res) => {
+  try {
+    const { fileIds = [], folderIds = [], targetFolderId } = req.body;
+    const cleanFolderId = targetFolderId && targetFolderId !== 'root' && targetFolderId !== 'null' && targetFolderId !== 'undefined'
+      ? targetFolderId
+      : null;
+
+    let targetFolder = null;
+    if (cleanFolderId) {
+      targetFolder = await Folder.findOne({ _id: cleanFolderId, owner: req.user._id, isTrashed: false });
+      if (!targetFolder) {
+        return res.status(404).json({ success: false, message: 'Target folder not found' });
+      }
+    }
+
+    // Move files
+    if (fileIds.length > 0) {
+      await File.updateMany(
+        { _id: { $in: fileIds }, owner: req.user._id },
+        { $set: { folderId: cleanFolderId } }
+      );
+    }
+
+    // Move folders (filtering out target folder and its subfolders to avoid circular loops)
+    if (folderIds.length > 0) {
+      for (const fId of folderIds) {
+        if (cleanFolderId && fId === cleanFolderId) continue;
+
+        const f = await Folder.findOne({ _id: fId, owner: req.user._id });
+        if (!f) continue;
+
+        let newPath = [];
+        if (targetFolder) {
+          newPath = [...(targetFolder.path || []), { _id: targetFolder._id, name: targetFolder.name }];
+        }
+
+        f.parentFolder = cleanFolderId;
+        f.path = newPath;
+        await f.save();
+
+        // Update children path
+        const children = await Folder.find({ 'path._id': f._id, owner: req.user._id });
+        for (const child of children) {
+          const indexInPath = child.path.findIndex((p) => p._id.toString() === f._id.toString());
+          if (indexInPath !== -1) {
+            const preservedTail = child.path.slice(indexInPath);
+            child.path = [...newPath, ...preservedTail];
+            await child.save();
+          }
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Selected items moved successfully'
+    });
+  } catch (error) {
+    console.error('Bulk move error:', error);
+    res.status(500).json({ success: false, message: 'Server error moving items' });
+  }
+};
+
 module.exports = {
   uploadFile,
   getFiles,
@@ -1128,5 +1230,7 @@ module.exports = {
   bulkDelete,
   downloadZip,
   downloadFolderZip,
-  uploadChunk
+  uploadChunk,
+  moveFile,
+  bulkMove
 };

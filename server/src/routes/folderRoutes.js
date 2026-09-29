@@ -8,7 +8,8 @@ const {
   toggleStarFolder,
   trashFolder,
   deleteFolderPermanently,
-  updateFolderTags
+  updateFolderTags,
+  moveFolder
 } = require('../controllers/folderController');
 const { downloadFolderZip } = require('../controllers/fileController');
 const { protect } = require('../middlewares/authMiddleware');
@@ -21,6 +22,7 @@ router.route('/')
 
 router.get('/:id/download-zip', downloadFolderZip);
 router.put('/:id/tags', updateFolderTags);
+router.put('/:id/move', moveFolder);
 
 router.route('/:id')
   .get(getFolderById)
