@@ -241,6 +241,31 @@ const deleteFolderPermanently = async (req, res) => {
   }
 };
 
+// @desc    Update tags on a folder
+// @route   PUT /api/folders/:id/tags
+// @access  Private
+const updateFolderTags = async (req, res) => {
+  try {
+    const { tags } = req.body;
+    const folder = await Folder.findOne({ _id: req.params.id, owner: req.user._id });
+    if (!folder) {
+      return res.status(404).json({ success: false, message: 'Folder not found' });
+    }
+
+    folder.tags = Array.isArray(tags) ? tags : [];
+    await folder.save();
+
+    res.json({
+      success: true,
+      message: 'Folder tags updated successfully',
+      folder
+    });
+  } catch (error) {
+    console.error('Update folder tags error:', error);
+    res.status(500).json({ success: false, message: 'Server error updating folder tags' });
+  }
+};
+
 module.exports = {
   createFolder,
   getFolders,
@@ -248,5 +273,6 @@ module.exports = {
   renameFolder,
   toggleStarFolder,
   trashFolder,
-  deleteFolderPermanently
+  deleteFolderPermanently,
+  updateFolderTags
 };

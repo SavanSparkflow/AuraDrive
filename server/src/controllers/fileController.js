@@ -1,11 +1,36 @@
 const crypto = require('crypto');
+const archiver = require('archiver');
+const axios = require('axios');
 const File = require('../models/File');
 const Folder = require('../models/Folder');
 const User = require('../models/User');
 const cloudinary = require('../config/cloudinary');
 const { uploadToCloudinary } = require('../middlewares/uploadMiddleware');
 
+// Safe archiver instance creator supporting all module formats
+const createZipArchive = (options = { zlib: { level: 6 } }) => {
+  if (typeof archiver === 'function') {
+    return archiver('zip', options);
+  }
+  if (archiver && typeof archiver.default === 'function') {
+    return archiver.default('zip', options);
+  }
+  if (archiver && archiver.ZipArchive) {
+    return new archiver.ZipArchive(options);
+  }
+  if (archiver && typeof archiver.create === 'function') {
+    return archiver.create('zip', options);
+  }
+  throw new Error('Archiver initialization failed');
+};
+
+// In-memory or temporary store for chunked uploads
+const chunkUploadStore = new Map();
+
 // @desc    Upload a file
+// @route   POST /api/files/upload
+// @access  Private
+// @desc    Upload a file (with automatic version history if same name exists)
 // @route   POST /api/files/upload
 // @access  Private
 const uploadFile = async (req, res) => {
@@ -28,7 +53,55 @@ const uploadFile = async (req, res) => {
     // Upload file buffer to Cloudinary
     const result = await uploadToCloudinary(req.file.buffer, req.file.originalname, req.file.mimetype);
 
-    // Create File in DB
+    // Check if a file with the same name already exists in this folder (version history feature)
+    const existingFile = await File.findOne({
+      name: req.file.originalname,
+      folderId: cleanFolderId,
+      owner: req.user._id,
+      isTrashed: false
+    });
+
+    if (existingFile) {
+      // Archive current version into versions array
+      const previousVersion = {
+        versionNumber: existingFile.currentVersion || 1,
+        url: existingFile.url,
+        publicId: existingFile.publicId,
+        resourceType: existingFile.resourceType || 'auto',
+        format: existingFile.format || '',
+        size: existingFile.size,
+        mimetype: existingFile.mimetype,
+        uploadedAt: existingFile.updatedAt || existingFile.createdAt || new Date()
+      };
+
+      existingFile.versions.push(previousVersion);
+      existingFile.currentVersion = (existingFile.currentVersion || 1) + 1;
+      
+      const sizeDifference = req.file.size - existingFile.size;
+
+      existingFile.url = result.secure_url || result.url;
+      existingFile.publicId = result.public_id;
+      existingFile.resourceType = result.resource_type || 'auto';
+      existingFile.format = result.format || '';
+      existingFile.size = req.file.size;
+      existingFile.mimetype = req.file.mimetype;
+
+      await existingFile.save();
+
+      // Update user storage usage difference
+      await User.findByIdAndUpdate(req.user._id, {
+        $inc: { storageUsed: sizeDifference }
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: `New version (v${existingFile.currentVersion}) created for "${req.file.originalname}"`,
+        file: existingFile,
+        isNewVersion: true
+      });
+    }
+
+    // Create new File in DB
     const fileDoc = await File.create({
       name: req.file.originalname,
       url: result.secure_url || result.url,
@@ -38,7 +111,9 @@ const uploadFile = async (req, res) => {
       size: req.file.size,
       mimetype: req.file.mimetype,
       folderId: cleanFolderId,
-      owner: req.user._id
+      owner: req.user._id,
+      currentVersion: 1,
+      versions: []
     });
 
     // Update user storage usage
@@ -447,6 +522,587 @@ const getStorageStats = async (req, res) => {
   }
 };
 
+// @desc    Get all versions of a file
+// @route   GET /api/files/:id/versions
+// @access  Private
+const getFileVersions = async (req, res) => {
+  try {
+    const file = await File.findOne({ _id: req.params.id, owner: req.user._id });
+    if (!file) {
+      return res.status(404).json({ success: false, message: 'File not found' });
+    }
+
+    res.json({
+      success: true,
+      currentVersion: file.currentVersion || 1,
+      currentFile: file,
+      versions: file.versions || []
+    });
+  } catch (error) {
+    console.error('Get file versions error:', error);
+    res.status(500).json({ success: false, message: 'Server error retrieving file versions' });
+  }
+};
+
+// @desc    Restore a previous version of a file
+// @route   PUT /api/files/:id/restore-version/:versionNumber
+// @access  Private
+const restoreFileVersion = async (req, res) => {
+  try {
+    const targetVersionNum = parseInt(req.params.versionNumber);
+    const file = await File.findOne({ _id: req.params.id, owner: req.user._id });
+    if (!file) {
+      return res.status(404).json({ success: false, message: 'File not found' });
+    }
+
+    const versionToRestore = file.versions.find((v) => v.versionNumber === targetVersionNum);
+    if (!versionToRestore) {
+      return res.status(404).json({ success: false, message: 'Target version not found' });
+    }
+
+    // Save current state into versions array
+    const archivedCurrent = {
+      versionNumber: file.currentVersion || 1,
+      url: file.url,
+      publicId: file.publicId,
+      resourceType: file.resourceType || 'auto',
+      format: file.format || '',
+      size: file.size,
+      mimetype: file.mimetype,
+      uploadedAt: file.updatedAt || new Date()
+    };
+
+    // Remove the chosen version from versions array
+    file.versions = file.versions.filter((v) => v.versionNumber !== targetVersionNum);
+    file.versions.push(archivedCurrent);
+
+    const sizeDifference = versionToRestore.size - file.size;
+
+    // Apply the restored version properties to current file
+    file.url = versionToRestore.url;
+    file.publicId = versionToRestore.publicId;
+    file.resourceType = versionToRestore.resourceType || 'auto';
+    file.format = versionToRestore.format || '';
+    file.size = versionToRestore.size;
+    file.mimetype = versionToRestore.mimetype;
+    file.currentVersion = targetVersionNum;
+
+    await file.save();
+
+    if (sizeDifference !== 0) {
+      await User.findByIdAndUpdate(req.user._id, {
+        $inc: { storageUsed: sizeDifference }
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Restored version ${targetVersionNum} as current version`,
+      file
+    });
+  } catch (error) {
+    console.error('Restore file version error:', error);
+    res.status(500).json({ success: false, message: 'Server error restoring file version' });
+  }
+};
+
+// @desc    Delete a specific historical version
+// @route   DELETE /api/files/:id/versions/:versionNumber
+// @access  Private
+const deleteFileVersion = async (req, res) => {
+  try {
+    const targetVersionNum = parseInt(req.params.versionNumber);
+    const file = await File.findOne({ _id: req.params.id, owner: req.user._id });
+    if (!file) {
+      return res.status(404).json({ success: false, message: 'File not found' });
+    }
+
+    const versionIndex = file.versions.findIndex((v) => v.versionNumber === targetVersionNum);
+    if (versionIndex === -1) {
+      return res.status(404).json({ success: false, message: 'Version not found in history' });
+    }
+
+    const [deletedVersion] = file.versions.splice(versionIndex, 1);
+    await file.save();
+
+    // Destroy on Cloudinary if not mock
+    if (deletedVersion.publicId && !deletedVersion.publicId.startsWith('auradrive_demo_')) {
+      try {
+        await cloudinary.uploader.destroy(deletedVersion.publicId, {
+          resource_type: deletedVersion.resourceType || 'raw'
+        });
+      } catch (err) {
+        console.warn('Could not delete version from Cloudinary:', err.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Version ${targetVersionNum} deleted from history`,
+      file
+    });
+  } catch (error) {
+    console.error('Delete file version error:', error);
+    res.status(500).json({ success: false, message: 'Server error deleting file version' });
+  }
+};
+
+// @desc    Update tags on a file
+// @route   PUT /api/files/:id/tags
+// @access  Private
+const updateFileTags = async (req, res) => {
+  try {
+    const { tags } = req.body;
+    const file = await File.findOne({ _id: req.params.id, owner: req.user._id });
+    if (!file) {
+      return res.status(404).json({ success: false, message: 'File not found' });
+    }
+
+    file.tags = Array.isArray(tags) ? tags : [];
+    await file.save();
+
+    res.json({
+      success: true,
+      message: 'Tags updated successfully',
+      file
+    });
+  } catch (error) {
+    console.error('Update file tags error:', error);
+    res.status(500).json({ success: false, message: 'Server error updating tags' });
+  }
+};
+
+// @desc    Bulk Tag items
+// @route   POST /api/files/bulk-tag
+// @access  Private
+const bulkTag = async (req, res) => {
+  try {
+    const { fileIds = [], folderIds = [], tag, action = 'add' } = req.body;
+    if (!tag || !tag.name) {
+      return res.status(400).json({ success: false, message: 'Tag name is required' });
+    }
+
+    if (action === 'add') {
+      if (fileIds.length > 0) {
+        await File.updateMany(
+          { _id: { $in: fileIds }, owner: req.user._id },
+          { $addToSet: { tags: tag } }
+        );
+      }
+      if (folderIds.length > 0) {
+        await Folder.updateMany(
+          { _id: { $in: folderIds }, owner: req.user._id },
+          { $addToSet: { tags: tag } }
+        );
+      }
+    } else {
+      if (fileIds.length > 0) {
+        await File.updateMany(
+          { _id: { $in: fileIds }, owner: req.user._id },
+          { $pull: { tags: { name: tag.name } } }
+        );
+      }
+      if (folderIds.length > 0) {
+        await Folder.updateMany(
+          { _id: { $in: folderIds }, owner: req.user._id },
+          { $pull: { tags: { name: tag.name } } }
+        );
+      }
+    }
+
+    res.json({
+      success: true,
+      message: action === 'add' ? 'Tag added to selected items' : 'Tag removed from selected items'
+    });
+  } catch (error) {
+    console.error('Bulk tag error:', error);
+    res.status(500).json({ success: false, message: 'Server error applying bulk tags' });
+  }
+};
+
+// @desc    Bulk Star items
+// @route   POST /api/files/bulk-star
+// @access  Private
+const bulkStar = async (req, res) => {
+  try {
+    const { fileIds = [], folderIds = [], isStarred = true } = req.body;
+
+    if (fileIds.length > 0) {
+      await File.updateMany(
+        { _id: { $in: fileIds }, owner: req.user._id },
+        { $set: { isStarred } }
+      );
+    }
+    if (folderIds.length > 0) {
+      await Folder.updateMany(
+        { _id: { $in: folderIds }, owner: req.user._id },
+        { $set: { isStarred } }
+      );
+    }
+
+    res.json({
+      success: true,
+      message: isStarred ? 'Selected items added to Starred' : 'Selected items removed from Starred'
+    });
+  } catch (error) {
+    console.error('Bulk star error:', error);
+    res.status(500).json({ success: false, message: 'Server error updating bulk star' });
+  }
+};
+
+// @desc    Bulk Trash or Restore items
+// @route   POST /api/files/bulk-trash
+// @access  Private
+const bulkTrash = async (req, res) => {
+  try {
+    const { fileIds = [], folderIds = [], trash = true } = req.body;
+    const isTrashed = Boolean(trash);
+    const trashedAt = isTrashed ? new Date() : null;
+
+    if (fileIds.length > 0) {
+      await File.updateMany(
+        { _id: { $in: fileIds }, owner: req.user._id },
+        { $set: { isTrashed, trashedAt } }
+      );
+    }
+
+    if (folderIds.length > 0) {
+      // Also update nested files & folders
+      for (const fId of folderIds) {
+        await Folder.updateOne({ _id: fId, owner: req.user._id }, { $set: { isTrashed, trashedAt } });
+        await Folder.updateMany({ 'path._id': fId, owner: req.user._id }, { $set: { isTrashed, trashedAt } });
+        await File.updateMany({ folderId: fId, owner: req.user._id }, { $set: { isTrashed, trashedAt } });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: isTrashed ? 'Selected items moved to Trash' : 'Selected items restored from Trash'
+    });
+  } catch (error) {
+    console.error('Bulk trash error:', error);
+    res.status(500).json({ success: false, message: 'Server error moving items to trash' });
+  }
+};
+
+// @desc    Bulk Delete permanently
+// @route   POST /api/files/bulk-delete
+// @access  Private
+const bulkDelete = async (req, res) => {
+  try {
+    const { fileIds = [], folderIds = [] } = req.body;
+
+    let allFolderIds = [...folderIds];
+    if (folderIds.length > 0) {
+      const childFolders = await Folder.find({ 'path._id': { $in: folderIds }, owner: req.user._id });
+      allFolderIds = [...new Set([...allFolderIds, ...childFolders.map((f) => f._id)])];
+    }
+
+    // Find all files in these folders + direct fileIds
+    const filesToDelete = await File.find({
+      $or: [
+        { _id: { $in: fileIds }, owner: req.user._id },
+        { folderId: { $in: allFolderIds }, owner: req.user._id }
+      ]
+    });
+
+    let totalStorageFreed = 0;
+    for (const file of filesToDelete) {
+      totalStorageFreed += file.size || 0;
+      if (file.publicId && !file.publicId.startsWith('auradrive_demo_')) {
+        try {
+          await cloudinary.uploader.destroy(file.publicId, {
+            resource_type: file.resourceType || 'raw'
+          });
+        } catch (cloudErr) {
+          console.warn('Cloudinary delete error:', cloudErr.message);
+        }
+      }
+    }
+
+    if (filesToDelete.length > 0) {
+      await File.deleteMany({ _id: { $in: filesToDelete.map((f) => f._id) } });
+    }
+    if (allFolderIds.length > 0) {
+      await Folder.deleteMany({ _id: { $in: allFolderIds } });
+    }
+
+    if (totalStorageFreed > 0) {
+      await User.findByIdAndUpdate(req.user._id, {
+        $inc: { storageUsed: -totalStorageFreed }
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Selected items permanently deleted'
+    });
+  } catch (error) {
+    console.error('Bulk delete error:', error);
+    res.status(500).json({ success: false, message: 'Server error permanently deleting items' });
+  }
+};
+
+// Helper: Recursively get all files in a folder structure
+const getFolderContentsRecursively = async (folderId, userId, parentPath = '') => {
+  const currentFolder = await Folder.findOne({ _id: folderId, owner: userId });
+  if (!currentFolder) return [];
+
+  const folderPath = parentPath ? `${parentPath}/${currentFolder.name}` : currentFolder.name;
+  let allFiles = [];
+
+  // Files in this folder
+  const files = await File.find({ folderId: folderId, owner: userId, isTrashed: false });
+  files.forEach((f) => {
+    allFiles.push({ file: f, path: `${folderPath}/${f.name}` });
+  });
+
+  // Subfolders
+  const subfolders = await Folder.find({ parentFolder: folderId, owner: userId, isTrashed: false });
+  for (const sub of subfolders) {
+    const subContents = await getFolderContentsRecursively(sub._id, userId, folderPath);
+    allFiles = allFiles.concat(subContents);
+  }
+
+  return allFiles;
+};
+
+// @desc    Download selected files and folders as a ZIP archive
+// @route   POST /api/files/download-zip
+// @access  Private
+const downloadZip = async (req, res) => {
+  try {
+    const { fileIds = [], folderIds = [] } = req.body;
+
+    if (fileIds.length === 0 && folderIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'Please select at least one file or folder to download' });
+    }
+
+    let filesToZip = [];
+
+    // Direct files
+    if (fileIds.length > 0) {
+      const files = await File.find({ _id: { $in: fileIds }, owner: req.user._id, isTrashed: false });
+      files.forEach((f) => {
+        filesToZip.push({ file: f, path: f.name });
+      });
+    }
+
+    // Folder hierarchies
+    if (folderIds.length > 0) {
+      for (const fId of folderIds) {
+        const folderContents = await getFolderContentsRecursively(fId, req.user._id);
+        filesToZip = filesToZip.concat(folderContents);
+      }
+    }
+
+    if (filesToZip.length === 0) {
+      return res.status(404).json({ success: false, message: 'No downloadable files found in selection' });
+    }
+
+    const archiveName = `AuraDrive_${Date.now()}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${archiveName}"`);
+
+    const archive = createZipArchive({ zlib: { level: 6 } });
+    archive.pipe(res);
+
+    archive.on('error', (err) => {
+      console.error('Archiver error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: 'Failed to create ZIP archive' });
+      }
+    });
+
+    for (const item of filesToZip) {
+      try {
+        if (item.file.url && item.file.url.startsWith('http')) {
+          const response = await axios.get(item.file.url, { responseType: 'stream', timeout: 20000 });
+          archive.append(response.data, { name: item.path });
+        }
+      } catch (streamErr) {
+        console.warn(`Could not stream file ${item.file.name} for zip:`, streamErr.message);
+      }
+    }
+
+    await archive.finalize();
+  } catch (error) {
+    console.error('Download ZIP error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: 'Server error generating zip archive' });
+    }
+  }
+};
+
+// @desc    Download single folder as ZIP
+// @route   GET /api/folders/:id/download-zip
+// @access  Private
+const downloadFolderZip = async (req, res) => {
+  try {
+    const folder = await Folder.findOne({ _id: req.params.id, owner: req.user._id });
+    if (!folder) {
+      return res.status(404).json({ success: false, message: 'Folder not found' });
+    }
+
+    const filesToZip = await getFolderContentsRecursively(folder._id, req.user._id);
+    const archiveName = `${folder.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.zip`;
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${archiveName}"`);
+
+    const archive = createZipArchive({ zlib: { level: 6 } });
+    archive.pipe(res);
+
+    archive.on('error', (err) => {
+      console.error('Archiver error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: 'Failed to create ZIP archive' });
+      }
+    });
+
+    for (const item of filesToZip) {
+      try {
+        if (item.file.url && item.file.url.startsWith('http')) {
+          const response = await axios.get(item.file.url, { responseType: 'stream', timeout: 20000 });
+          archive.append(response.data, { name: item.path });
+        }
+      } catch (streamErr) {
+        console.warn(`Could not stream file ${item.file.name} for zip:`, streamErr.message);
+      }
+    }
+
+    await archive.finalize();
+  } catch (error) {
+    console.error('Download folder ZIP error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: 'Server error generating folder zip archive' });
+    }
+  }
+};
+
+// @desc    Upload chunk for large files
+// @route   POST /api/files/chunk-upload
+// @access  Private
+const uploadChunk = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No chunk file received' });
+    }
+
+    const { uploadId, chunkIndex, totalChunks, originalName, mimetype, folderId } = req.body;
+    const index = parseInt(chunkIndex);
+    const total = parseInt(totalChunks);
+
+    if (!uploadId || isNaN(index) || isNaN(total) || !originalName) {
+      return res.status(400).json({ success: false, message: 'Missing chunk upload parameters' });
+    }
+
+    if (!chunkUploadStore.has(uploadId)) {
+      chunkUploadStore.set(uploadId, {
+        chunks: new Array(total),
+        receivedCount: 0,
+        createdAt: Date.now()
+      });
+    }
+
+    const session = chunkUploadStore.get(uploadId);
+    session.chunks[index] = req.file.buffer;
+    session.receivedCount += 1;
+
+    // Check if all chunks received
+    if (session.receivedCount === total) {
+      const fullBuffer = Buffer.concat(session.chunks);
+      chunkUploadStore.delete(uploadId);
+
+      const cleanFolderId = folderId && folderId !== 'root' && folderId !== 'null' && folderId !== 'undefined' ? folderId : null;
+
+      // Upload reassembled buffer to Cloudinary
+      const result = await uploadToCloudinary(fullBuffer, originalName, mimetype || 'application/octet-stream');
+
+      // Check existing file for versioning
+      const existingFile = await File.findOne({
+        name: originalName,
+        folderId: cleanFolderId,
+        owner: req.user._id,
+        isTrashed: false
+      });
+
+      if (existingFile) {
+        const previousVersion = {
+          versionNumber: existingFile.currentVersion || 1,
+          url: existingFile.url,
+          publicId: existingFile.publicId,
+          resourceType: existingFile.resourceType || 'auto',
+          format: existingFile.format || '',
+          size: existingFile.size,
+          mimetype: existingFile.mimetype,
+          uploadedAt: existingFile.updatedAt || new Date()
+        };
+
+        existingFile.versions.push(previousVersion);
+        existingFile.currentVersion = (existingFile.currentVersion || 1) + 1;
+        
+        const sizeDifference = fullBuffer.length - existingFile.size;
+
+        existingFile.url = result.secure_url || result.url;
+        existingFile.publicId = result.public_id;
+        existingFile.resourceType = result.resource_type || 'auto';
+        existingFile.format = result.format || '';
+        existingFile.size = fullBuffer.length;
+        existingFile.mimetype = mimetype || existingFile.mimetype;
+
+        await existingFile.save();
+
+        await User.findByIdAndUpdate(req.user._id, {
+          $inc: { storageUsed: sizeDifference }
+        });
+
+        return res.status(200).json({
+          success: true,
+          isComplete: true,
+          message: `Chunked upload completed. Version v${existingFile.currentVersion} created!`,
+          file: existingFile
+        });
+      }
+
+      const fileDoc = await File.create({
+        name: originalName,
+        url: result.secure_url || result.url,
+        publicId: result.public_id,
+        resourceType: result.resource_type || 'auto',
+        format: result.format || '',
+        size: fullBuffer.length,
+        mimetype: mimetype || 'application/octet-stream',
+        folderId: cleanFolderId,
+        owner: req.user._id,
+        currentVersion: 1,
+        versions: []
+      });
+
+      await User.findByIdAndUpdate(req.user._id, {
+        $inc: { storageUsed: fullBuffer.length }
+      });
+
+      return res.status(201).json({
+        success: true,
+        isComplete: true,
+        message: 'Chunked upload reassembled & uploaded successfully!',
+        file: fileDoc
+      });
+    }
+
+    res.json({
+      success: true,
+      isComplete: false,
+      chunkIndex: index,
+      progress: Math.round((session.receivedCount / total) * 100)
+    });
+  } catch (error) {
+    console.error('Chunk upload error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Chunk upload processing failed' });
+  }
+};
+
 module.exports = {
   uploadFile,
   getFiles,
@@ -461,5 +1117,16 @@ module.exports = {
   getPublicFile,
   deleteFilePermanently,
   emptyTrash,
-  getStorageStats
+  getStorageStats,
+  getFileVersions,
+  restoreFileVersion,
+  deleteFileVersion,
+  updateFileTags,
+  bulkTag,
+  bulkStar,
+  bulkTrash,
+  bulkDelete,
+  downloadZip,
+  downloadFolderZip,
+  uploadChunk
 };

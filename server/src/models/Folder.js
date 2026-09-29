@@ -41,7 +41,13 @@ const folderSchema = new mongoose.Schema(
     trashedAt: {
       type: Date,
       default: null
-    }
+    },
+    tags: [
+      {
+        name: { type: String, trim: true },
+        color: { type: String, default: '#7C3AED' }
+      }
+    ]
   },
   {
     timestamps: true

@@ -3,6 +3,8 @@ import { Star, Folder as FolderIcon, File as FileIcon, Loader2 } from 'lucide-re
 import { useDriveStore } from '../store/driveStore';
 import FolderCard from '../components/drive/FolderCard';
 import FileCard from '../components/drive/FileCard';
+import VirtualizedGridList from '../components/drive/VirtualizedGridList';
+import BulkActionBar from '../components/drive/BulkActionBar';
 
 export default function Starred() {
   const { starredFiles, starredFolders, isLoading, viewMode, fetchStarred } = useDriveStore();
@@ -14,7 +16,7 @@ export default function Starred() {
   const isEmpty = starredFiles.length === 0 && starredFolders.length === 0;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-fade-in pb-12">
+    <div className="space-y-6 max-w-7xl mx-auto animate-fade-in pb-20">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="p-2.5 rounded-2xl bg-amber-100 text-amber-600 shadow-xs">
@@ -53,19 +55,13 @@ export default function Starred() {
                 </h3>
               </div>
 
-              {viewMode === 'grid' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                  {starredFolders.map((folder) => (
-                    <FolderCard key={folder._id} folder={folder} viewMode="grid" />
-                  ))}
-                </div>
-              ) : (
-                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs divide-y divide-slate-100">
-                  {starredFolders.map((folder) => (
-                    <FolderCard key={folder._id} folder={folder} viewMode="list" />
-                  ))}
-                </div>
-              )}
+              <VirtualizedGridList
+                items={starredFolders}
+                viewMode={viewMode}
+                renderItem={(folder) => (
+                  <FolderCard folder={folder} viewMode={viewMode} />
+                )}
+              />
             </div>
           )}
 
@@ -79,23 +75,20 @@ export default function Starred() {
                 </h3>
               </div>
 
-              {viewMode === 'grid' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                  {starredFiles.map((file) => (
-                    <FileCard key={file._id} file={file} viewMode="grid" />
-                  ))}
-                </div>
-              ) : (
-                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs divide-y divide-slate-100">
-                  {starredFiles.map((file) => (
-                    <FileCard key={file._id} file={file} viewMode="list" />
-                  ))}
-                </div>
-              )}
+              <VirtualizedGridList
+                items={starredFiles}
+                viewMode={viewMode}
+                renderItem={(file) => (
+                  <FileCard file={file} viewMode={viewMode} />
+                )}
+              />
             </div>
           )}
         </div>
       )}
+
+      {/* Floating Bulk Action Bar */}
+      <BulkActionBar />
     </div>
   );
 }

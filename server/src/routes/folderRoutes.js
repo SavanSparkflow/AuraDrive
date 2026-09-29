@@ -7,8 +7,10 @@ const {
   renameFolder,
   toggleStarFolder,
   trashFolder,
-  deleteFolderPermanently
+  deleteFolderPermanently,
+  updateFolderTags
 } = require('../controllers/folderController');
+const { downloadFolderZip } = require('../controllers/fileController');
 const { protect } = require('../middlewares/authMiddleware');
 
 router.use(protect); // All folder operations require auth
@@ -16,6 +18,9 @@ router.use(protect); // All folder operations require auth
 router.route('/')
   .post(createFolder)
   .get(getFolders);
+
+router.get('/:id/download-zip', downloadFolderZip);
+router.put('/:id/tags', updateFolderTags);
 
 router.route('/:id')
   .get(getFolderById)

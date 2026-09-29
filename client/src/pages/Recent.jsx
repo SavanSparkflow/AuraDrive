@@ -2,6 +2,8 @@ import React, { useEffect } from 'react';
 import { Clock, File as FileIcon, Loader2 } from 'lucide-react';
 import { useDriveStore } from '../store/driveStore';
 import FileCard from '../components/drive/FileCard';
+import VirtualizedGridList from '../components/drive/VirtualizedGridList';
+import BulkActionBar from '../components/drive/BulkActionBar';
 
 export default function Recent() {
   const { recentFiles, isLoading, viewMode, fetchRecent } = useDriveStore();
@@ -11,7 +13,7 @@ export default function Recent() {
   }, [fetchRecent]);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-fade-in pb-12">
+    <div className="space-y-6 max-w-7xl mx-auto animate-fade-in pb-20">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="p-2.5 rounded-2xl bg-purple-100 text-purple-600 shadow-xs">
@@ -39,22 +41,17 @@ export default function Recent() {
           </p>
         </div>
       ) : (
-        <div>
-          {viewMode === 'grid' ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {recentFiles.map((file) => (
-                <FileCard key={file._id} file={file} viewMode="grid" />
-              ))}
-            </div>
-          ) : (
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs divide-y divide-slate-100">
-              {recentFiles.map((file) => (
-                <FileCard key={file._id} file={file} viewMode="list" />
-              ))}
-            </div>
+        <VirtualizedGridList
+          items={recentFiles}
+          viewMode={viewMode}
+          renderItem={(file) => (
+            <FileCard file={file} viewMode={viewMode} />
           )}
-        </div>
+        />
       )}
+
+      {/* Floating Bulk Action Bar */}
+      <BulkActionBar />
     </div>
   );
 }

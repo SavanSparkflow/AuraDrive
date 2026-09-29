@@ -70,7 +70,29 @@ const fileSchema = new mongoose.Schema(
       type: String,
       default: null,
       index: true
-    }
+    },
+    tags: [
+      {
+        name: { type: String, trim: true },
+        color: { type: String, default: '#7C3AED' }
+      }
+    ],
+    currentVersion: {
+      type: Number,
+      default: 1
+    },
+    versions: [
+      {
+        versionNumber: { type: Number, required: true },
+        url: { type: String, required: true },
+        publicId: { type: String, required: true },
+        resourceType: { type: String, default: 'auto' },
+        format: { type: String, default: '' },
+        size: { type: Number, required: true },
+        mimetype: { type: String, required: true },
+        uploadedAt: { type: Date, default: Date.now }
+      }
+    ]
   },
   {
     timestamps: true

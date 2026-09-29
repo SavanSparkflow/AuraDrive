@@ -3,6 +3,8 @@ import { Trash2, AlertTriangle, RotateCcw, Folder as FolderIcon, File as FileIco
 import { useDriveStore } from '../store/driveStore';
 import FolderCard from '../components/drive/FolderCard';
 import FileCard from '../components/drive/FileCard';
+import VirtualizedGridList from '../components/drive/VirtualizedGridList';
+import BulkActionBar from '../components/drive/BulkActionBar';
 import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
 
@@ -33,7 +35,7 @@ export default function Trash() {
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-fade-in pb-12">
+    <div className="space-y-6 max-w-7xl mx-auto animate-fade-in pb-20">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -85,19 +87,13 @@ export default function Trash() {
                 </h3>
               </div>
 
-              {viewMode === 'grid' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                  {trashFolders.map((folder) => (
-                    <FolderCard key={folder._id} folder={folder} viewMode="grid" isTrashView={true} />
-                  ))}
-                </div>
-              ) : (
-                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs divide-y divide-slate-100">
-                  {trashFolders.map((folder) => (
-                    <FolderCard key={folder._id} folder={folder} viewMode="list" isTrashView={true} />
-                  ))}
-                </div>
-              )}
+              <VirtualizedGridList
+                items={trashFolders}
+                viewMode={viewMode}
+                renderItem={(folder) => (
+                  <FolderCard key={folder._id} folder={folder} viewMode={viewMode} isTrashView={true} />
+                )}
+              />
             </div>
           )}
 
@@ -111,23 +107,20 @@ export default function Trash() {
                 </h3>
               </div>
 
-              {viewMode === 'grid' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                  {trashFiles.map((file) => (
-                    <FileCard key={file._id} file={file} viewMode="grid" isTrashView={true} />
-                  ))}
-                </div>
-              ) : (
-                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs divide-y divide-slate-100">
-                  {trashFiles.map((file) => (
-                    <FileCard key={file._id} file={file} viewMode="list" isTrashView={true} />
-                  ))}
-                </div>
-              )}
+              <VirtualizedGridList
+                items={trashFiles}
+                viewMode={viewMode}
+                renderItem={(file) => (
+                  <FileCard key={file._id} file={file} viewMode={viewMode} isTrashView={true} />
+                )}
+              />
             </div>
           )}
         </div>
       )}
+
+      {/* Floating Bulk Action Bar for Trash View */}
+      <BulkActionBar isTrashView={true} />
 
       {/* Empty Trash Confirmation Modal */}
       <Modal
@@ -137,11 +130,13 @@ export default function Trash() {
         maxWidth="max-w-md"
       >
         <div className="space-y-4">
-          <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-2xl flex items-start gap-3">
+          <div className="flex items-start gap-3.5 p-3.5 bg-rose-50 border border-rose-100 rounded-2xl">
             <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-            <p className="text-xs text-rose-900 leading-relaxed">
-              All {trashFiles.length + trashFolders.length} items in your trash will be permanently deleted from Cloudinary and database storage. This action cannot be undone.
-            </p>
+            <div className="text-xs text-rose-900 leading-relaxed">
+              <p className="font-semibold text-rose-950 mb-0.5">This action cannot be undone.</p>
+              Are you sure you want to permanently delete all{' '}
+              <span className="font-bold underline">{trashFiles.length + trashFolders.length} items</span> in your trash? All files and folders will be removed forever.
+            </div>
           </div>
 
           <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
@@ -159,7 +154,7 @@ export default function Trash() {
               onClick={handleEmptyTrash}
               icon={Trash2}
             >
-              Empty All Trash
+              Delete Forever
             </Button>
           </div>
         </div>

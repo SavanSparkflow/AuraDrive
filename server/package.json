@@ -7,10 +7,17 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js"
   },
-  "keywords": ["drive", "cloud-storage", "mern", "cloudinary"],
+  "keywords": [
+    "drive",
+    "cloud-storage",
+    "mern",
+    "cloudinary"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "archiver": "^8.0.0",
+    "axios": "^1.20.0",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^1.41.3",
     "cors": "^2.8.5",
