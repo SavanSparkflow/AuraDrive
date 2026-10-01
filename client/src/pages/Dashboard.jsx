@@ -23,6 +23,7 @@ import FolderCard from '../components/drive/FolderCard';
 import FileCard from '../components/drive/FileCard';
 import VirtualizedGridList from '../components/drive/VirtualizedGridList';
 import BulkActionBar from '../components/drive/BulkActionBar';
+import QuickAccessBar from '../components/drive/QuickAccessBar';
 import Button from '../components/common/Button';
 
 export default function Dashboard() {
@@ -44,7 +45,8 @@ export default function Dashboard() {
     selectedFolderIds,
     selectAll,
     clearSelection,
-    downloadFolderZipAction
+    downloadFolderZipAction,
+    openContextMenu
   } = useDriveStore();
 
   const fileInputRef = useRef(null);
@@ -112,7 +114,10 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-fade-in pb-20">
+    <div
+      onContextMenu={(e) => openContextMenu(e, null, 'canvas')}
+      className="space-y-6 max-w-7xl mx-auto animate-fade-in pb-20 min-h-[calc(100vh-140px)]"
+    >
       {/* Hidden File Input */}
       <input
         type="file"
@@ -158,6 +163,9 @@ export default function Dashboard() {
           </Button>
         </div>
       </div>
+
+      {/* Pinned & Quick Access Section */}
+      <QuickAccessBar files={filteredFiles} folders={filteredFolders} />
 
       {/* Category & Tag Filter Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">

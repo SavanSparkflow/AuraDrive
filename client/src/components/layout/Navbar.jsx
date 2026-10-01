@@ -11,7 +11,13 @@ import {
   Folder as FolderIcon,
   Sparkles,
   ChevronRight,
-  Star
+  Star,
+  SlidersHorizontal,
+  History,
+  PieChart,
+  Calendar,
+  Layers,
+  Filter
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useDriveStore } from '../../store/driveStore';
@@ -29,37 +35,46 @@ export default function Navbar({ onMenuToggle, isMobileMenuOpen }) {
     setSearchQuery,
     searchItems,
     searchResults,
-    setPreviewItem
+    setPreviewItem,
+    searchFilters,
+    setSearchFilters,
+    isSearchFilterOpen,
+    setIsSearchFilterOpen,
+    setIsActivityOpen,
+    setIsStorageAnalyticsOpen
   } = useDriveStore();
 
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchContainerRef = useRef(null);
+  const searchInputRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Search debounce
+  // Search debounce with filters
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (searchQuery.trim().length > 0) {
-        searchItems(searchQuery);
+      if (searchQuery.trim().length > 0 || searchFilters.type !== 'all' || searchFilters.dateRange !== 'all') {
+        searchItems(searchQuery, searchFilters);
       }
     }, 200);
     return () => clearTimeout(timer);
-  }, [searchQuery, searchItems]);
+  }, [searchQuery, searchFilters, searchItems]);
 
   // Click outside search
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
         setIsSearchFocused(false);
+        setIsSearchFilterOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [setIsSearchFilterOpen]);
 
   const handleSelectSearchResult = (item, type) => {
     setIsSearchFocused(false);
+    setIsSearchFilterOpen(false);
     setSearchQuery('');
     if (type === 'folder') {
       navigate(`/drive/folder/${item._id}`);
@@ -72,6 +87,8 @@ export default function Navbar({ onMenuToggle, isMobileMenuOpen }) {
     logout();
     navigate('/login');
   };
+
+  const hasActiveFilters = searchFilters.type !== 'all' || searchFilters.dateRange !== 'all' || searchFilters.minSize > 0 || searchFilters.maxSize > 0;
 
   return (
     <header className="sticky top-0 z-30 h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between gap-4">
@@ -86,7 +103,7 @@ export default function Navbar({ onMenuToggle, isMobileMenuOpen }) {
         </button>
       </div>
 
-      {/* Center: Global Search Bar */}
+      {/* Center: Global Search Bar with Filter dropdown */}
       <div className="flex-1 max-w-2xl relative" ref={searchContainerRef}>
         <div
           className={`flex items-center gap-2.5 px-4 py-2 bg-slate-100/90 hover:bg-slate-100 border rounded-2xl transition-all duration-200 ${
@@ -97,8 +114,10 @@ export default function Navbar({ onMenuToggle, isMobileMenuOpen }) {
         >
           <Search className={`w-4 h-4 shrink-0 transition-colors ${isSearchFocused ? 'text-brand-600' : 'text-slate-400'}`} />
           <input
+            ref={searchInputRef}
+            id="global-search-input"
             type="text"
-            placeholder="Search in AuraDrive (files, folders, formats)..."
+            placeholder="Search files & folders (Press '/' to focus)..."
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
@@ -107,25 +126,127 @@ export default function Navbar({ onMenuToggle, isMobileMenuOpen }) {
             onFocus={() => setIsSearchFocused(true)}
             className="w-full bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
           />
+
           {searchQuery && (
             <button
-              onClick={() => {
-                setSearchQuery('');
-              }}
+              onClick={() => setSearchQuery('')}
               className="text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           )}
+
+          {/* Filter options trigger */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsSearchFilterOpen(!isSearchFilterOpen);
+            }}
+            title="Advanced Search Filters"
+            className={`p-1.5 rounded-lg transition-all shrink-0 ${
+              hasActiveFilters || isSearchFilterOpen
+                ? 'bg-brand-100 text-brand-700 shadow-xs'
+                : 'text-slate-400 hover:text-slate-700 hover:bg-slate-200/60'
+            }`}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+          </button>
         </div>
 
+        {/* Filter Popup Modal/Dropdown */}
+        {isSearchFilterOpen && (
+          <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-3xl shadow-2xl border border-slate-100 p-5 z-50 animate-scale-in space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-brand-600" />
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Search Filters</h4>
+              </div>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={() => setSearchFilters({ type: 'all', dateRange: 'all', minSize: 0, maxSize: 0 })}
+                  className="text-xs text-brand-600 hover:underline font-semibold"
+                >
+                  Reset All
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Type Filter */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">File Type</label>
+                <select
+                  value={searchFilters.type}
+                  onChange={(e) => setSearchFilters({ type: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-brand-500"
+                >
+                  <option value="all">All Types</option>
+                  <option value="image">Images (PNG, JPG, SVG)</option>
+                  <option value="document">Documents & PDFs</option>
+                  <option value="video">Videos (MP4, MKV)</option>
+                  <option value="audio">Audio (MP3, WAV)</option>
+                  <option value="archive">Archives (ZIP, RAR)</option>
+                  <option value="code">Code & Scripts</option>
+                </select>
+              </div>
+
+              {/* Date Modified Filter */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Date Modified</label>
+                <select
+                  value={searchFilters.dateRange}
+                  onChange={(e) => setSearchFilters({ dateRange: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-brand-500"
+                >
+                  <option value="all">Any time</option>
+                  <option value="today">Today</option>
+                  <option value="7days">Last 7 days</option>
+                  <option value="30days">Last 30 days</option>
+                  <option value="year">Past year</option>
+                </select>
+              </div>
+
+              {/* Size Filter */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">File Size</label>
+                <select
+                  value={
+                    searchFilters.maxSize === 1048576
+                      ? 'small'
+                      : searchFilters.maxSize === 10485760
+                      ? 'medium'
+                      : searchFilters.minSize === 104857600
+                      ? 'huge'
+                      : 'all'
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'small') setSearchFilters({ minSize: 0, maxSize: 1024 * 1024 });
+                    else if (val === 'medium') setSearchFilters({ minSize: 1024 * 1024, maxSize: 10 * 1024 * 1024 });
+                    else if (val === 'huge') setSearchFilters({ minSize: 100 * 1024 * 1024, maxSize: 0 });
+                    else setSearchFilters({ minSize: 0, maxSize: 0 });
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-brand-500"
+                >
+                  <option value="all">Any size</option>
+                  <option value="small">Small (&lt; 1 MB)</option>
+                  <option value="medium">Medium (1 MB - 10 MB)</option>
+                  <option value="huge">Large (&gt; 100 MB)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Instant Search Results Dropdown */}
-        {isSearchFocused && searchQuery.trim().length > 0 && (
+        {isSearchFocused && (searchQuery.trim().length > 0 || hasActiveFilters) && (
           <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 py-3 z-50 max-h-96 overflow-y-auto animate-scale-in">
             {searchResults.folders.length === 0 && searchResults.files.length === 0 ? (
               <div className="py-8 text-center text-slate-400 text-sm">
                 <Search className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                No results found for "<span className="font-semibold text-slate-700">{searchQuery}</span>"
+                No results found {searchQuery ? `for "${searchQuery}"` : 'matching filters'}
               </div>
             ) : (
               <>
@@ -194,8 +315,28 @@ export default function Navbar({ onMenuToggle, isMobileMenuOpen }) {
         )}
       </div>
 
-      {/* Right side: View Toggle + User Avatar */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      {/* Right side: Activity Log + Storage Analytics + View Toggle + User Avatar */}
+      <div className="flex items-center gap-2 sm:gap-2.5">
+        {/* Activity Logs Trigger Button */}
+        <button
+          type="button"
+          onClick={() => setIsActivityOpen(true)}
+          title="Recent Activity Feed"
+          className="p-2 text-slate-600 hover:text-brand-600 hover:bg-slate-100 rounded-xl transition-colors relative"
+        >
+          <History className="w-5 h-5" />
+        </button>
+
+        {/* Storage Analytics Trigger Button */}
+        <button
+          type="button"
+          onClick={() => setIsStorageAnalyticsOpen(true)}
+          title="Storage Breakdown Analytics"
+          className="p-2 text-slate-600 hover:text-brand-600 hover:bg-slate-100 rounded-xl transition-colors"
+        >
+          <PieChart className="w-5 h-5" />
+        </button>
+
         {/* Grid / List View Toggle */}
         <div className="hidden sm:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/60">
           <button
@@ -259,6 +400,9 @@ export default function Navbar({ onMenuToggle, isMobileMenuOpen }) {
           </DropdownItem>
           <DropdownItem icon={Star} onClick={() => navigate('/starred')}>
             Starred Items
+          </DropdownItem>
+          <DropdownItem icon={History} onClick={() => setIsActivityOpen(true)}>
+            Activity Logs
           </DropdownItem>
           <DropdownDivider />
           <DropdownItem icon={LogOut} danger onClick={handleLogout}>

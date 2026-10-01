@@ -71,6 +71,14 @@ const fileSchema = new mongoose.Schema(
       default: null,
       index: true
     },
+    sharePassword: {
+      type: String,
+      default: null
+    },
+    shareExpiresAt: {
+      type: Date,
+      default: null
+    },
     tags: [
       {
         name: { type: String, trim: true },

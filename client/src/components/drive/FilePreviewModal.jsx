@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   X,
   Download,
@@ -8,7 +7,11 @@ import {
   ExternalLink,
   Calendar,
   HardDrive,
-  FileType
+  FileType,
+  FileCode,
+  Crop,
+  Highlighter,
+  Play
 } from 'lucide-react';
 import { useDriveStore } from '../../store/driveStore';
 import { getFileTypeCategory, getFileIcon } from '../../utils/fileHelpers';
@@ -17,7 +20,16 @@ import { formatDate } from '../../utils/formatDate';
 import Button from '../common/Button';
 
 export default function FilePreviewModal() {
-  const { previewItem, setPreviewItem, toggleStar, setShareItem } = useDriveStore();
+  const {
+    previewItem,
+    setPreviewItem,
+    toggleStar,
+    setShareItem,
+    setTextEditorItem,
+    setImageEditorItem,
+    setPdfViewerItem,
+    setMediaPlayerItem
+  } = useDriveStore();
 
   if (!previewItem) return null;
 
@@ -71,6 +83,71 @@ export default function FilePreviewModal() {
 
           {/* Action Buttons */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Contextual Editor Launcher */}
+            {(previewItem.name?.match(/\.(txt|md|js|jsx|ts|tsx|json|html|css|py|env|csv|sql|xml|yaml|yml)$/i) || previewItem.mimetype?.includes('text') || previewItem.mimetype?.includes('json')) && (
+              <Button
+                variant="outline"
+                size="sm"
+                icon={FileCode}
+                onClick={() => {
+                  const item = previewItem;
+                  setPreviewItem(null);
+                  setTextEditorItem(item);
+                }}
+                className="hidden sm:inline-flex text-xs border-brand-200 text-brand-700 bg-brand-50 hover:bg-brand-100"
+              >
+                Open Editor
+              </Button>
+            )}
+
+            {previewItem.mimetype?.startsWith('image/') && (
+              <Button
+                variant="outline"
+                size="sm"
+                icon={Crop}
+                onClick={() => {
+                  const item = previewItem;
+                  setPreviewItem(null);
+                  setImageEditorItem(item);
+                }}
+                className="hidden sm:inline-flex text-xs border-purple-200 text-purple-700 bg-purple-50 hover:bg-purple-100"
+              >
+                Edit Photo
+              </Button>
+            )}
+
+            {(previewItem.mimetype?.includes('pdf') || previewItem.name?.toLowerCase().endsWith('.pdf')) && (
+              <Button
+                variant="outline"
+                size="sm"
+                icon={Highlighter}
+                onClick={() => {
+                  const item = previewItem;
+                  setPreviewItem(null);
+                  setPdfViewerItem(item);
+                }}
+                className="hidden sm:inline-flex text-xs border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100"
+              >
+                PDF Annotator
+              </Button>
+            )}
+
+            {(previewItem.mimetype?.startsWith('video/') || previewItem.mimetype?.startsWith('audio/')) && (
+              <Button
+                variant="outline"
+                size="sm"
+                icon={Play}
+                onClick={() => {
+                  const item = previewItem;
+                  setPreviewItem(null);
+                  setMediaPlayerItem(item);
+                }}
+                className="hidden sm:inline-flex text-xs border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100"
+              >
+                Cinema Player
+              </Button>
+            )}
+
             <button
               type="button"
               onClick={() => toggleStar(previewItem._id, 'file')}
@@ -143,12 +220,17 @@ export default function FilePreviewModal() {
               </div>
               <audio src={previewItem.url} controls className="w-full" />
             </div>
-          ) : previewItem.mimetype.includes('pdf') ? (
-            <iframe
-              src={previewItem.url}
-              title={previewItem.name}
-              className="w-full h-[65vh] rounded-2xl shadow-xl border border-slate-200 bg-white"
-            />
+          ) : previewItem.mimetype.includes('pdf') || previewItem.name?.toLowerCase().endsWith('.pdf') ? (
+            <div className="w-full h-full flex flex-col items-center">
+              <iframe
+                src={`https://docs.google.com/gview?url=${encodeURIComponent(previewItem.url)}&embedded=true`}
+                title={previewItem.name}
+                className="w-full h-[68vh] rounded-2xl shadow-xl border border-slate-200 bg-white"
+                onError={(e) => {
+                  console.warn('Iframe load error, fallback to direct object');
+                }}
+              />
+            </div>
           ) : (
             /* Generic / Document Placeholder */
             <div className="max-w-md bg-white p-8 rounded-3xl shadow-lg border border-slate-200 text-center space-y-4">

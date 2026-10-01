@@ -10,6 +10,9 @@ import {
   ShieldCheck,
   AlertCircle,
   Loader2,
+  Lock,
+  KeyRound,
+  Clock,
   ExternalLink
 } from 'lucide-react';
 import Logo from '../components/common/Logo';
@@ -17,22 +20,37 @@ import Button from '../components/common/Button';
 import { getFileIcon, getFileTypeCategory } from '../utils/fileHelpers';
 import { formatBytes } from '../utils/formatBytes';
 import { formatDate } from '../utils/formatDate';
+import toast from 'react-hot-toast';
 
 export default function SharedView() {
   const { shareToken } = useParams();
   const [file, setFile] = useState(null);
+  const [isPasswordProtected, setIsPasswordProtected] = useState(false);
+  const [password, setPassword] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isExpired, setIsExpired] = useState(false);
 
   useEffect(() => {
     const fetchSharedFile = async () => {
       try {
         setIsLoading(true);
         const res = await axios.get(`/api/files/public/${shareToken}`);
-        setFile(res.data.file);
+        if (res.data.isPasswordProtected) {
+          setIsPasswordProtected(true);
+          setFile(res.data.file);
+        } else {
+          setFile(res.data.file);
+        }
         setIsLoading(false);
       } catch (err) {
-        setError(err.response?.data?.message || 'Shared file is not accessible or link has expired.');
+        if (err.response?.status === 410 || err.response?.data?.isExpired) {
+          setIsExpired(true);
+          setError('This shared link has expired.');
+        } else {
+          setError(err.response?.data?.message || 'Shared file is not accessible.');
+        }
         setIsLoading(false);
       }
     };
@@ -42,8 +60,28 @@ export default function SharedView() {
     }
   }, [shareToken]);
 
+  const handleUnlockPassword = async (e) => {
+    e?.preventDefault();
+    if (!password.trim()) {
+      toast.error('Please enter the password');
+      return;
+    }
+
+    try {
+      setIsVerifying(true);
+      const res = await axios.post(`/api/files/public/${shareToken}/verify`, { password });
+      setFile(res.data.file);
+      setIsPasswordProtected(false);
+      toast.success('Document unlocked!');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Incorrect password');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   const handleDownload = () => {
-    if (!file) return;
+    if (!file || !file.url) return;
     const link = document.createElement('a');
     link.href = file.url;
     link.target = '_blank';
@@ -65,17 +103,71 @@ export default function SharedView() {
   if (error || !file) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center space-y-4">
+        <div className="max-w-md w-full bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center space-y-4 animate-scale-in">
           <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center">
-            <AlertCircle className="w-8 h-8" />
+            {isExpired ? <Clock className="w-8 h-8" /> : <AlertCircle className="w-8 h-8" />}
           </div>
-          <h2 className="text-lg font-bold text-slate-900">File Not Available</h2>
-          <p className="text-xs text-slate-500">{error || 'This link may have expired or public access was revoked by the owner.'}</p>
+          <h2 className="text-lg font-bold text-slate-900">
+            {isExpired ? 'Link Has Expired' : 'File Not Available'}
+          </h2>
+          <p className="text-xs text-slate-500">
+            {error || 'This link may have expired or access was revoked by the owner.'}
+          </p>
           <div className="pt-2">
             <Link to="/">
               <Button variant="primary" size="sm">
                 Back to AuraDrive
               </Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Password Prompt Screen
+  if (isPasswordProtected) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center space-y-5 animate-scale-in">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shadow-xs">
+            <Lock className="w-8 h-8" />
+          </div>
+
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Password Protected</h2>
+            <p className="text-xs text-slate-500 mt-1">
+              The owner has protected "<span className="font-semibold text-slate-800">{file.name}</span>" with a password.
+            </p>
+          </div>
+
+          <form onSubmit={handleUnlockPassword} className="space-y-4">
+            <div className="relative">
+              <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="password"
+                placeholder="Enter document password..."
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoFocus
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-4 py-3 text-xs text-slate-900 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+              />
+            </div>
+
+            <Button
+              type="submit"
+              variant="primary"
+              size="md"
+              isLoading={isVerifying}
+              className="w-full justify-center"
+            >
+              Unlock Document
+            </Button>
+          </form>
+
+          <div className="pt-2">
+            <Link to="/" className="text-xs text-slate-400 hover:text-slate-600">
+              Return to AuraDrive Home
             </Link>
           </div>
         </div>
@@ -154,11 +246,11 @@ export default function SharedView() {
               <h3 className="font-bold text-slate-800 text-sm truncate">{file.name}</h3>
               <audio src={file.url} controls className="w-full" />
             </div>
-          ) : file.mimetype?.includes('pdf') ? (
+          ) : file.mimetype?.includes('pdf') || file.name?.toLowerCase().endsWith('.pdf') ? (
             <iframe
-              src={file.url}
+              src={`https://docs.google.com/gview?url=${encodeURIComponent(file.url)}&embedded=true`}
               title={file.name}
-              className="w-full h-[65vh] rounded-2xl shadow-xl border border-slate-200 bg-white"
+              className="w-full h-[68vh] rounded-2xl shadow-xl border border-slate-200 bg-white"
             />
           ) : (
             <div className="max-w-md bg-white p-8 rounded-3xl shadow-lg border border-slate-200 text-center space-y-4">

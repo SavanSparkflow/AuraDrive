@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import { UploadCloud } from 'lucide-react';
@@ -13,12 +13,130 @@ import VersionHistoryModal from '../drive/VersionHistoryModal';
 import TagModal from '../drive/TagModal';
 import MoveModal from '../drive/MoveModal';
 import UploadArea from '../drive/UploadArea';
+import ContextMenu from '../drive/ContextMenu';
+import ActivityDrawer from '../drive/ActivityDrawer';
+import StorageAnalyticsModal from '../drive/StorageAnalyticsModal';
+import TextEditorModal from '../drive/TextEditorModal';
+import ImageEditorModal from '../drive/ImageEditorModal';
+import PdfViewerModal from '../drive/PdfViewerModal';
+import MediaPlayerModal from '../drive/MediaPlayerModal';
+import FloatingAudioPlayer from '../drive/FloatingAudioPlayer';
 import { useDriveStore } from '../../store/driveStore';
 
 export default function AppLayout() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const { uploadMultipleFiles, currentFolder } = useDriveStore();
+  const {
+    uploadMultipleFiles,
+    currentFolder,
+    files,
+    folders,
+    selectedFileIds,
+    selectedFolderIds,
+    copyItemToClipboard,
+    pasteClipboardAction,
+    trashAction,
+    bulkTrashAction,
+    setRenameItem,
+    clearSelection,
+    closeContextMenu
+  } = useDriveStore();
   const location = useLocation();
+
+  // --- GLOBAL KEYBOARD SHORTCUTS ---
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+      const isInputFocused = activeTag === 'input' || activeTag === 'textarea' || document.activeElement?.isContentEditable;
+
+      // 1. Focus search bar with '/'
+      if (e.key === '/' && !isInputFocused) {
+        e.preventDefault();
+        const searchInput = document.getElementById('global-search-input');
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.select();
+        }
+        return;
+      }
+
+      // If user is actively typing in an input, don't hijack editing keys
+      if (isInputFocused) return;
+
+      // 2. Escape: Deselect all / close context menu
+      if (e.key === 'Escape') {
+        clearSelection();
+        closeContextMenu();
+        return;
+      }
+
+      // 3. Ctrl + C (Copy selected item)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        if (selectedFileIds.length > 0) {
+          const fileToCopy = files.find((f) => f._id === selectedFileIds[0]);
+          if (fileToCopy) {
+            e.preventDefault();
+            copyItemToClipboard(fileToCopy, 'file');
+          }
+        } else if (selectedFolderIds.length > 0) {
+          const folderToCopy = folders.find((f) => f._id === selectedFolderIds[0]);
+          if (folderToCopy) {
+            e.preventDefault();
+            copyItemToClipboard(folderToCopy, 'folder');
+          }
+        }
+        return;
+      }
+
+      // 4. Ctrl + V (Paste item from clipboard into current folder)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        pasteClipboardAction(currentFolder?._id || null);
+        return;
+      }
+
+      // 5. F2 (Quick Rename selected item)
+      if (e.key === 'F2') {
+        e.preventDefault();
+        if (selectedFileIds.length === 1) {
+          const file = files.find((f) => f._id === selectedFileIds[0]);
+          if (file) setRenameItem({ item: file, type: 'file' });
+        } else if (selectedFolderIds.length === 1) {
+          const folder = folders.find((f) => f._id === selectedFolderIds[0]);
+          if (folder) setRenameItem({ item: folder, type: 'folder' });
+        }
+        return;
+      }
+
+      // 6. Delete / Backspace (Move selected items to Trash)
+      if (e.key === 'Delete') {
+        if (selectedFileIds.length > 0 || selectedFolderIds.length > 0) {
+          e.preventDefault();
+          if (selectedFileIds.length + selectedFolderIds.length === 1) {
+            if (selectedFileIds.length === 1) trashAction(selectedFileIds[0], 'file', true);
+            else trashAction(selectedFolderIds[0], 'folder', true);
+          } else {
+            bulkTrashAction(true);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    files,
+    folders,
+    selectedFileIds,
+    selectedFolderIds,
+    currentFolder,
+    copyItemToClipboard,
+    pasteClipboardAction,
+    trashAction,
+    bulkTrashAction,
+    setRenameItem,
+    clearSelection,
+    closeContextMenu
+  ]);
 
   const onDrop = useCallback(
     (acceptedFiles) => {
@@ -89,6 +207,15 @@ export default function AppLayout() {
       {/* Floating Upload Status */}
       <UploadArea />
 
+      {/* Global Context Menu */}
+      <ContextMenu />
+
+      {/* Global Activity Drawer */}
+      <ActivityDrawer />
+
+      {/* Storage Breakdown Analytics Modal */}
+      <StorageAnalyticsModal />
+
       {/* Global Modal dialogs */}
       <CreateFolderModal />
       <RenameModal />
@@ -98,6 +225,13 @@ export default function AppLayout() {
       <VersionHistoryModal />
       <TagModal />
       <MoveModal />
+
+      {/* Standout In-App Interactive Tools */}
+      <TextEditorModal />
+      <ImageEditorModal />
+      <PdfViewerModal />
+      <MediaPlayerModal />
+      <FloatingAudioPlayer />
     </div>
   );
 }

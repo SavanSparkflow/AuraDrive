@@ -9,7 +9,8 @@ const {
   trashFolder,
   deleteFolderPermanently,
   updateFolderTags,
-  moveFolder
+  moveFolder,
+  copyFolder
 } = require('../controllers/folderController');
 const { downloadFolderZip } = require('../controllers/fileController');
 const { protect } = require('../middlewares/authMiddleware');
@@ -19,6 +20,8 @@ router.use(protect); // All folder operations require auth
 router.route('/')
   .post(createFolder)
   .get(getFolders);
+
+router.post('/copy', copyFolder);
 
 router.get('/:id/download-zip', downloadFolderZip);
 router.put('/:id/tags', updateFolderTags);

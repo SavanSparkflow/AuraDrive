@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const archiver = require('archiver');
 const axios = require('axios');
 const File = require('../models/File');
@@ -6,6 +7,7 @@ const Folder = require('../models/Folder');
 const User = require('../models/User');
 const cloudinary = require('../config/cloudinary');
 const { uploadToCloudinary } = require('../middlewares/uploadMiddleware');
+const { logActivity } = require('../utils/activityLogger');
 
 // Safe archiver instance creator supporting all module formats
 const createZipArchive = (options = { zlib: { level: 6 } }) => {
@@ -93,6 +95,15 @@ const uploadFile = async (req, res) => {
         $inc: { storageUsed: sizeDifference }
       });
 
+      logActivity({
+        owner: req.user._id,
+        action: 'upload',
+        itemType: 'file',
+        itemName: existingFile.name,
+        itemId: existingFile._id,
+        details: { version: existingFile.currentVersion }
+      });
+
       return res.status(200).json({
         success: true,
         message: `New version (v${existingFile.currentVersion}) created for "${req.file.originalname}"`,
@@ -119,6 +130,14 @@ const uploadFile = async (req, res) => {
     // Update user storage usage
     await User.findByIdAndUpdate(req.user._id, {
       $inc: { storageUsed: req.file.size }
+    });
+
+    logActivity({
+      owner: req.user._id,
+      action: 'upload',
+      itemType: 'file',
+      itemName: fileDoc.name,
+      itemId: fileDoc._id
     });
 
     res.status(201).json({
@@ -231,29 +250,80 @@ const getTrashItems = async (req, res) => {
   }
 };
 
-// @desc    Global Search files and folders
-// @route   GET /api/files/search?q=...
+// @desc    Global Search files and folders with advanced filters
+// @route   GET /api/files/search?q=...&type=...&dateRange=...&minSize=...&maxSize=...
 // @access  Private
 const searchItems = async (req, res) => {
   try {
-    const query = req.query.q || '';
-    if (!query.trim()) {
-      return res.json({ success: true, files: [], folders: [] });
+    const query = (req.query.q || '').trim();
+    const type = req.query.type || 'all';
+    const dateRange = req.query.dateRange || 'all';
+    const minSize = parseInt(req.query.minSize) || 0;
+    const maxSize = parseInt(req.query.maxSize) || 0;
+
+    let fileFilter = {
+      owner: req.user._id,
+      isTrashed: false
+    };
+
+    let folderFilter = {
+      owner: req.user._id,
+      isTrashed: false
+    };
+
+    if (query) {
+      const regex = new RegExp(query, 'i');
+      fileFilter.name = regex;
+      folderFilter.name = regex;
     }
 
-    const regex = new RegExp(query.trim(), 'i');
+    // Type filter
+    if (type && type !== 'all') {
+      if (type === 'image') fileFilter.mimetype = { $regex: /^image\//i };
+      else if (type === 'video') fileFilter.mimetype = { $regex: /^video\//i };
+      else if (type === 'audio') fileFilter.mimetype = { $regex: /^audio\//i };
+      else if (type === 'document') {
+        fileFilter.mimetype = {
+          $regex: /(pdf|word|sheet|presentation|text|csv|json|document|officedocument|msword|excel)/i
+        };
+      } else if (type === 'archive') {
+        fileFilter.mimetype = { $regex: /(zip|tar|gz|rar|7z|compressed)/i };
+      } else if (type === 'code') {
+        fileFilter.name = { $regex: /\.(js|jsx|ts|tsx|html|css|py|json|md|c|cpp|java|php|rb|go|rs|sql)$/i };
+      }
+    }
 
-    const files = await File.find({
-      owner: req.user._id,
-      isTrashed: false,
-      name: regex
-    }).limit(20);
+    // Date modified filter
+    if (dateRange && dateRange !== 'all') {
+      const now = new Date();
+      let startDate = new Date();
+      if (dateRange === 'today') {
+        startDate.setHours(0, 0, 0, 0);
+      } else if (dateRange === '7days') {
+        startDate.setDate(now.getDate() - 7);
+      } else if (dateRange === '30days') {
+        startDate.setDate(now.getDate() - 30);
+      } else if (dateRange === 'year') {
+        startDate.setFullYear(now.getFullYear() - 1);
+      }
+      fileFilter.updatedAt = { $gte: startDate };
+      folderFilter.updatedAt = { $gte: startDate };
+    }
 
-    const folders = await Folder.find({
-      owner: req.user._id,
-      isTrashed: false,
-      name: regex
-    }).limit(10);
+    // Size filter (in bytes)
+    if (minSize > 0 || maxSize > 0) {
+      fileFilter.size = {};
+      if (minSize > 0) fileFilter.size.$gte = minSize;
+      if (maxSize > 0) fileFilter.size.$lte = maxSize;
+    }
+
+    const [files, folders] = await Promise.all([
+      File.find(fileFilter).sort({ updatedAt: -1 }).limit(30),
+      // Only return folders if type is 'all' or not matching files specifically
+      type === 'all' || type === ''
+        ? Folder.find(folderFilter).sort({ updatedAt: -1 }).limit(15)
+        : Promise.resolve([])
+    ]);
 
     res.json({
       success: true,
@@ -278,6 +348,14 @@ const toggleStarFile = async (req, res) => {
 
     file.isStarred = !file.isStarred;
     await file.save();
+
+    logActivity({
+      owner: req.user._id,
+      action: file.isStarred ? 'star' : 'unstar',
+      itemType: 'file',
+      itemName: file.name,
+      itemId: file._id
+    });
 
     res.json({
       success: true,
@@ -305,8 +383,18 @@ const renameFile = async (req, res) => {
       return res.status(404).json({ success: false, message: 'File not found' });
     }
 
+    const oldName = file.name;
     file.name = name.trim();
     await file.save();
+
+    logActivity({
+      owner: req.user._id,
+      action: 'rename',
+      itemType: 'file',
+      itemName: file.name,
+      itemId: file._id,
+      details: { oldName, newName: file.name }
+    });
 
     res.json({
       success: true,
@@ -336,6 +424,14 @@ const trashFile = async (req, res) => {
     file.trashedAt = isTrashed ? new Date() : null;
     await file.save();
 
+    logActivity({
+      owner: req.user._id,
+      action: isTrashed ? 'trash' : 'restore',
+      itemType: 'file',
+      itemName: file.name,
+      itemId: file._id
+    });
+
     res.json({
       success: true,
       message: isTrashed ? 'File moved to Trash' : 'File restored from Trash',
@@ -347,7 +443,7 @@ const trashFile = async (req, res) => {
   }
 };
 
-// @desc    Generate/Toggle Public Share Link
+// @desc    Generate/Toggle Public Share Link with optional Password & Expiry
 // @route   PUT /api/files/:id/share
 // @access  Private
 const shareFile = async (req, res) => {
@@ -357,7 +453,7 @@ const shareFile = async (req, res) => {
       return res.status(404).json({ success: false, message: 'File not found' });
     }
 
-    const { isPublic } = req.body;
+    const { isPublic, password, expiresIn } = req.body;
     file.isPublic = isPublic !== undefined ? Boolean(isPublic) : !file.isPublic;
 
     if (file.isPublic) {
@@ -366,16 +462,54 @@ const shareFile = async (req, res) => {
       }
       const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
       file.shareLink = `${clientUrl}/share/${file.shareToken}`;
+
+      // Set or update password
+      if (password && password.trim()) {
+        const salt = await bcrypt.genSalt(10);
+        file.sharePassword = await bcrypt.hash(password.trim(), salt);
+      } else if (password === '' || password === null) {
+        file.sharePassword = null;
+      }
+
+      // Calculate expiration date
+      if (expiresIn && expiresIn !== 'never') {
+        const now = new Date();
+        if (expiresIn === '1h') now.setHours(now.getHours() + 1);
+        else if (expiresIn === '1d') now.setDate(now.getDate() + 1);
+        else if (expiresIn === '7d') now.setDate(now.getDate() + 7);
+        else if (expiresIn === '30d') now.setDate(now.getDate() + 30);
+        else if (new Date(expiresIn).getTime() > 0) {
+          now.setTime(new Date(expiresIn).getTime());
+        }
+        file.shareExpiresAt = now;
+      } else if (expiresIn === 'never') {
+        file.shareExpiresAt = null;
+      }
     } else {
       file.shareLink = null;
+      file.sharePassword = null;
+      file.shareExpiresAt = null;
     }
 
     await file.save();
 
+    logActivity({
+      owner: req.user._id,
+      action: file.isPublic ? 'share' : 'unshare',
+      itemType: 'file',
+      itemName: file.name,
+      itemId: file._id,
+      details: { hasPassword: !!file.sharePassword, expiresAt: file.shareExpiresAt }
+    });
+
+    const fileObj = file.toObject();
+    fileObj.hasPassword = !!file.sharePassword;
+    delete fileObj.sharePassword;
+
     res.json({
       success: true,
-      message: file.isPublic ? 'Public share link generated' : 'Sharing turned off',
-      file
+      message: file.isPublic ? 'Public share link configured' : 'Sharing turned off',
+      file: fileObj
     });
   } catch (error) {
     console.error('Share file error:', error);
@@ -395,7 +529,77 @@ const getPublicFile = async (req, res) => {
     }).populate('owner', 'name avatar');
 
     if (!file) {
-      return res.status(404).json({ success: false, message: 'Shared file not found or link has expired' });
+      return res.status(404).json({ success: false, message: 'Shared file not found or sharing has been turned off' });
+    }
+
+    // Check expiration
+    if (file.shareExpiresAt && new Date() > new Date(file.shareExpiresAt)) {
+      return res.status(410).json({
+        success: false,
+        isExpired: true,
+        message: 'This shared link has expired.'
+      });
+    }
+
+    // If file is password protected, require unlock first
+    if (file.sharePassword) {
+      return res.json({
+        success: true,
+        isPasswordProtected: true,
+        file: {
+          _id: file._id,
+          name: file.name,
+          size: file.size,
+          mimetype: file.mimetype,
+          owner: file.owner,
+          shareExpiresAt: file.shareExpiresAt,
+          updatedAt: file.updatedAt
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      isPasswordProtected: false,
+      file
+    });
+  } catch (error) {
+    console.error('Get public file error:', error);
+    res.status(500).json({ success: false, message: 'Server error loading shared file' });
+  }
+};
+
+// @desc    Verify Share Password for locked public file
+// @route   POST /api/files/public/:shareToken/verify
+// @access  Public
+const verifySharePassword = async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.status(400).json({ success: false, message: 'Password is required' });
+    }
+
+    const file = await File.findOne({
+      shareToken: req.params.shareToken,
+      isPublic: true,
+      isTrashed: false
+    }).populate('owner', 'name avatar');
+
+    if (!file) {
+      return res.status(404).json({ success: false, message: 'Shared file not found' });
+    }
+
+    if (file.shareExpiresAt && new Date() > new Date(file.shareExpiresAt)) {
+      return res.status(410).json({ success: false, isExpired: true, message: 'This shared link has expired' });
+    }
+
+    if (!file.sharePassword) {
+      return res.json({ success: true, file });
+    }
+
+    const isMatch = await bcrypt.compare(password, file.sharePassword);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'Incorrect password. Please try again.' });
     }
 
     res.json({
@@ -403,8 +607,73 @@ const getPublicFile = async (req, res) => {
       file
     });
   } catch (error) {
-    console.error('Get public file error:', error);
-    res.status(500).json({ success: false, message: 'Server error loading shared file' });
+    console.error('Verify share password error:', error);
+    res.status(500).json({ success: false, message: 'Server error verifying share password' });
+  }
+};
+
+// @desc    Copy / Duplicate a file
+// @route   POST /api/files/copy
+// @access  Private
+const copyFile = async (req, res) => {
+  try {
+    const { fileId, targetFolderId, newName } = req.body;
+    if (!fileId) {
+      return res.status(400).json({ success: false, message: 'fileId is required' });
+    }
+
+    const original = await File.findOne({ _id: fileId, owner: req.user._id, isTrashed: false });
+    if (!original) {
+      return res.status(404).json({ success: false, message: 'Original file not found' });
+    }
+
+    const cleanFolderId = targetFolderId && targetFolderId !== 'root' ? targetFolderId : null;
+    if (cleanFolderId) {
+      const folder = await Folder.findOne({ _id: cleanFolderId, owner: req.user._id, isTrashed: false });
+      if (!folder) {
+        return res.status(404).json({ success: false, message: 'Target folder not found' });
+      }
+    }
+
+    const baseName = original.name.substring(0, original.name.lastIndexOf('.')) || original.name;
+    const ext = original.name.includes('.') ? original.name.substring(original.name.lastIndexOf('.')) : '';
+    const nameToUse = newName || `${baseName} (Copy)${ext}`;
+
+    const newFile = await File.create({
+      name: nameToUse,
+      url: original.url,
+      publicId: original.publicId,
+      resourceType: original.resourceType,
+      format: original.format,
+      size: original.size,
+      mimetype: original.mimetype,
+      folderId: cleanFolderId,
+      owner: req.user._id,
+      tags: original.tags || []
+    });
+
+    // Increment user storage
+    await User.findByIdAndUpdate(req.user._id, {
+      $inc: { storageUsed: original.size }
+    });
+
+    logActivity({
+      owner: req.user._id,
+      action: 'copy',
+      itemType: 'file',
+      itemName: newFile.name,
+      itemId: newFile._id,
+      details: { originalName: original.name }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `File copied as "${newFile.name}"`,
+      file: newFile
+    });
+  } catch (error) {
+    console.error('Copy file error:', error);
+    res.status(500).json({ success: false, message: 'Server error copying file' });
   }
 };
 
@@ -1205,6 +1474,82 @@ const bulkMove = async (req, res) => {
   }
 };
 
+// @desc    Update file content (text editor save or image editor overwrite)
+// @route   PUT /api/files/:id/content
+// @access  Private
+const updateFileContent = async (req, res) => {
+  try {
+    const file = await File.findOne({ _id: req.params.id, owner: req.user._id });
+    if (!file) {
+      return res.status(404).json({ success: false, message: 'File not found' });
+    }
+
+    let buffer = null;
+    let mimeType = file.mimetype;
+
+    if (req.file) {
+      buffer = req.file.buffer;
+      mimeType = req.file.mimetype || file.mimetype;
+    } else if (req.body.content !== undefined) {
+      buffer = Buffer.from(req.body.content, 'utf8');
+    } else {
+      return res.status(400).json({ success: false, message: 'No content provided to update' });
+    }
+
+    // Upload new buffer to Cloudinary
+    const result = await uploadToCloudinary(buffer, file.name, mimeType);
+
+    // Save previous version in version history
+    const previousVersion = {
+      versionNumber: file.currentVersion || 1,
+      url: file.url,
+      publicId: file.publicId,
+      resourceType: file.resourceType || 'auto',
+      format: file.format || '',
+      size: file.size,
+      mimetype: file.mimetype,
+      uploadedAt: file.updatedAt || file.createdAt || new Date()
+    };
+
+    file.versions.push(previousVersion);
+    file.currentVersion = (file.currentVersion || 1) + 1;
+
+    const sizeDifference = buffer.length - file.size;
+
+    file.url = result.secure_url || result.url;
+    file.publicId = result.public_id;
+    file.resourceType = result.resource_type || 'auto';
+    file.format = result.format || file.format;
+    file.size = buffer.length;
+    file.mimetype = mimeType;
+
+    await file.save();
+
+    // Update storage usage
+    await User.findByIdAndUpdate(req.user._id, {
+      $inc: { storageUsed: sizeDifference }
+    });
+
+    logActivity({
+      owner: req.user._id,
+      action: 'upload',
+      itemType: 'file',
+      itemName: file.name,
+      itemId: file._id,
+      details: { isEdit: true, version: file.currentVersion }
+    });
+
+    res.json({
+      success: true,
+      message: `Updated "${file.name}" to version v${file.currentVersion}`,
+      file
+    });
+  } catch (error) {
+    console.error('Update file content error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Server error updating file content' });
+  }
+};
+
 module.exports = {
   uploadFile,
   getFiles,
@@ -1217,6 +1562,9 @@ module.exports = {
   trashFile,
   shareFile,
   getPublicFile,
+  verifySharePassword,
+  copyFile,
+  updateFileContent,
   deleteFilePermanently,
   emptyTrash,
   getStorageStats,

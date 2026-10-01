@@ -31,7 +31,8 @@ export default function FolderCard({ folder, viewMode = 'grid', isTrashView = fa
     setMoveModalItem,
     moveItemAction,
     selectedFolderIds,
-    toggleSelectItem
+    toggleSelectItem,
+    openContextMenu
   } = useDriveStore();
 
   const [isDragOver, setIsDragOver] = useState(false);
@@ -111,6 +112,7 @@ export default function FolderCard({ folder, viewMode = 'grid', isTrashView = fa
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onDoubleClick={handleOpen}
+        onContextMenu={(e) => openContextMenu(e, folder, 'folder')}
         onClick={(e) => {
           if (e.ctrlKey || e.metaKey) {
             e.stopPropagation();
@@ -281,6 +283,7 @@ export default function FolderCard({ folder, viewMode = 'grid', isTrashView = fa
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onDoubleClick={handleOpen}
+      onContextMenu={(e) => openContextMenu(e, folder, 'folder')}
       onClick={(e) => {
         if (e.ctrlKey || e.metaKey) {
           e.stopPropagation();

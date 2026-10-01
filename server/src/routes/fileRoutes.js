@@ -26,18 +26,25 @@ const {
   downloadZip,
   uploadChunk,
   moveFile,
-  bulkMove
+  bulkMove,
+  copyFile,
+  updateFileContent,
+  verifySharePassword
 } = require('../controllers/fileController');
 const { protect } = require('../middlewares/authMiddleware');
 const { upload } = require('../middlewares/uploadMiddleware');
 
 // Public route for shared file access
 router.get('/public/:shareToken', getPublicFile);
+router.post('/public/:shareToken/verify', verifySharePassword);
 
 // All subsequent file routes require authentication
 router.use(protect);
 
+router.post('/copy', copyFile);
+
 router.post('/upload', upload.single('file'), uploadFile);
+router.put('/:id/content', upload.single('file'), updateFileContent);
 router.post('/chunk-upload', upload.single('chunk'), uploadChunk);
 router.post('/download-zip', downloadZip);
 

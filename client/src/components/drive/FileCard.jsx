@@ -32,7 +32,8 @@ export default function FileCard({ file, viewMode = 'grid', isTrashView = false 
     setTagModalItem,
     setMoveModalItem,
     selectedFileIds,
-    toggleSelectItem
+    toggleSelectItem,
+    openContextMenu
   } = useDriveStore();
 
   const isSelected = selectedFileIds.includes(file._id);
@@ -83,6 +84,7 @@ export default function FileCard({ file, viewMode = 'grid', isTrashView = false 
         draggable={!isTrashView}
         onDragStart={handleDragStart}
         onClick={handlePreview}
+        onContextMenu={(e) => openContextMenu(e, file, 'file')}
         className={`group relative bg-white border rounded-2xl transition-all duration-200 cursor-pointer select-none flex flex-col justify-between ${
           isSelected
             ? 'border-brand-500 ring-2 ring-brand-500/30 bg-brand-50/20 shadow-md'
@@ -274,6 +276,7 @@ export default function FileCard({ file, viewMode = 'grid', isTrashView = false 
       draggable={!isTrashView}
       onDragStart={handleDragStart}
       onClick={handlePreview}
+      onContextMenu={(e) => openContextMenu(e, file, 'file')}
       className={`group flex items-center justify-between px-4 py-3 border-b transition-colors select-none cursor-pointer ${
         isSelected
           ? 'bg-brand-50/50 border-brand-200'

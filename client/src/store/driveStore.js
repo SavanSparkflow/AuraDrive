@@ -20,6 +20,34 @@ export const useDriveStore = create((set, get) => ({
   selectedFileIds: [],
   selectedFolderIds: [],
 
+  // Clipboard State (for Copy/Paste Ctrl+C / Ctrl+V)
+  clipboardItem: null, // { item, type: 'file' | 'folder' } | null
+
+  // Context Menu State
+  contextMenu: {
+    isOpen: false,
+    x: 0,
+    y: 0,
+    item: null,
+    type: 'file' // 'file' | 'folder' | 'canvas'
+  },
+
+  // Activity Log State
+  activities: [],
+  isActivityOpen: false,
+
+  // Storage Analytics Modal
+  isStorageAnalyticsOpen: false,
+
+  // Search Filters
+  searchFilters: {
+    type: 'all',
+    dateRange: 'all',
+    minSize: 0,
+    maxSize: 0
+  },
+  isSearchFilterOpen: false,
+
   // UI State
   isLoading: false,
   viewMode: localStorage.getItem('auradrive_view_mode') || 'grid', // 'grid' | 'list'
@@ -43,6 +71,13 @@ export const useDriveStore = create((set, get) => ({
   moveModalItem: null, // { item, type: 'file' | 'folder', isBulk?: boolean }
   isDownloadingZip: false,
 
+  // Standout In-App Interactive Tools
+  textEditorItem: null, // File object for in-app code/markdown/text editor
+  imageEditorItem: null, // File object for in-app image cropper/filter editor
+  pdfViewerItem: null, // File object for in-app PDF annotator
+  mediaPlayerItem: null, // File object for video streaming player
+  activeAudioTrack: null, // Track object for background audio player
+
   // Setters
   setViewMode: (mode) => {
     localStorage.setItem('auradrive_view_mode', mode);
@@ -51,6 +86,8 @@ export const useDriveStore = create((set, get) => ({
   setFilterType: (type) => set({ filterType: type }),
   setActiveTagFilter: (tag) => set({ activeTagFilter: tag }),
   setSearchQuery: (query) => set({ searchQuery: query }),
+  setSearchFilters: (filters) => set((state) => ({ searchFilters: { ...state.searchFilters, ...filters } })),
+  setIsSearchFilterOpen: (isOpen) => set({ isSearchFilterOpen: isOpen }),
   setPreviewItem: (item) => set({ previewItem: item }),
   setShareItem: (item) => set({ shareItem: item }),
   setRenameItem: (item) => set({ renameItem: item }),
@@ -59,6 +96,43 @@ export const useDriveStore = create((set, get) => ({
   setVersionHistoryItem: (item) => set({ versionHistoryItem: item }),
   setTagModalItem: (item) => set({ tagModalItem: item }),
   setMoveModalItem: (item) => set({ moveModalItem: item }),
+  setTextEditorItem: (item) => set({ textEditorItem: item }),
+  setImageEditorItem: (item) => set({ imageEditorItem: item }),
+  setPdfViewerItem: (item) => set({ pdfViewerItem: item }),
+  setMediaPlayerItem: (item) => set({ mediaPlayerItem: item }),
+  setActiveAudioTrack: (track) => set({ activeAudioTrack: track }),
+  setIsActivityOpen: (isOpen) => set({ isActivityOpen: isOpen }),
+  setIsStorageAnalyticsOpen: (isOpen) => set({ isStorageAnalyticsOpen: isOpen }),
+
+  // Context Menu controls
+  openContextMenu: (e, item = null, type = 'file') => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const x = e ? e.clientX : window.innerWidth / 2;
+    const y = e ? e.clientY : window.innerHeight / 2;
+    set({
+      contextMenu: {
+        isOpen: true,
+        x,
+        y,
+        item,
+        type
+      }
+    });
+  },
+  closeContextMenu: () => {
+    set((state) => ({
+      contextMenu: { ...state.contextMenu, isOpen: false }
+    }));
+  },
+
+  // Clipboard Actions
+  copyItemToClipboard: (item, type) => {
+    set({ clipboardItem: { item, type } });
+    toast.success(`Copied "${item.name}" to clipboard`);
+  },
 
   // --- SELECTION ACTIONS ---
   toggleSelectItem: (id, type, isMulti = false) => {
@@ -665,18 +739,89 @@ export const useDriveStore = create((set, get) => ({
     }
   },
 
-  toggleShare: async (fileId, isPublic) => {
+  toggleShare: async (fileId, isPublic, password = undefined, expiresIn = undefined) => {
     try {
-      const res = await api.put(`/files/${fileId}/share`, { isPublic });
+      const payload = { isPublic };
+      if (password !== undefined) payload.password = password;
+      if (expiresIn !== undefined) payload.expiresIn = expiresIn;
+
+      const res = await api.put(`/files/${fileId}/share`, payload);
       const updated = res.data.file;
       set((state) => ({
-        files: state.files.map((f) => (f._id === fileId ? updated : f)),
-        shareItem: updated
+        files: state.files.map((f) => (f._id === fileId ? { ...f, ...updated } : f)),
+        shareItem: { ...state.shareItem, ...updated }
       }));
-      toast.success(updated.isPublic ? 'Public link generated' : 'Sharing disabled');
+      toast.success(updated.isPublic ? 'Public link configured' : 'Sharing disabled');
       return updated;
     } catch {
       toast.error('Failed to update share settings');
+    }
+  },
+
+  // Copy / Duplicate Item
+  copyItemAction: async (id, type, targetFolderId = null, customName = null) => {
+    try {
+      if (type === 'folder') {
+        const res = await api.post('/folders/copy', {
+          folderId: id,
+          targetFolderId: targetFolderId || get().currentFolder?._id || null,
+          newName: customName
+        });
+        const copied = res.data.folder;
+        set((state) => ({
+          folders: [copied, ...state.folders]
+        }));
+        toast.success(`Duplicated folder "${copied.name}"`);
+        return { success: true, folder: copied };
+      } else {
+        const res = await api.post('/files/copy', {
+          fileId: id,
+          targetFolderId: targetFolderId || get().currentFolder?._id || null,
+          newName: customName
+        });
+        const copied = res.data.file;
+        set((state) => ({
+          files: [copied, ...state.files]
+        }));
+        useAuthStore.getState().fetchMe();
+        toast.success(`Duplicated file "${copied.name}"`);
+        return { success: true, file: copied };
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Copy operation failed';
+      toast.error(msg);
+      return { success: false, message: msg };
+    }
+  },
+
+  // Paste from Clipboard
+  pasteClipboardAction: async (targetFolderId = null) => {
+    const clipboard = get().clipboardItem;
+    if (!clipboard || !clipboard.item) {
+      toast('Clipboard is empty. Press Ctrl+C on a file or folder first.', { icon: '📋' });
+      return;
+    }
+    const targetId = targetFolderId || get().currentFolder?._id || null;
+    await get().copyItemAction(clipboard.item._id, clipboard.type, targetId);
+  },
+
+  // Activity logs
+  fetchActivities: async (page = 1) => {
+    try {
+      const res = await api.get('/activities', { params: { page, limit: 30 } });
+      set({ activities: res.data.activities || [] });
+    } catch (err) {
+      console.error('Fetch activities error:', err);
+    }
+  },
+
+  clearActivitiesAction: async () => {
+    try {
+      await api.delete('/activities');
+      set({ activities: [] });
+      toast.success('Activity history cleared');
+    } catch {
+      toast.error('Failed to clear activities');
     }
   },
 
@@ -738,13 +883,22 @@ export const useDriveStore = create((set, get) => ({
     }
   },
 
-  searchItems: async (query) => {
-    if (!query.trim()) {
+  searchItems: async (query, explicitFilters = null) => {
+    const filters = explicitFilters || get().searchFilters;
+    const trimmedQuery = (query || '').trim();
+
+    if (!trimmedQuery && filters.type === 'all' && filters.dateRange === 'all' && !filters.minSize && !filters.maxSize) {
       set({ searchResults: { files: [], folders: [] } });
       return;
     }
     try {
-      const res = await api.get('/files/search', { params: { q: query } });
+      const params = { q: trimmedQuery };
+      if (filters.type && filters.type !== 'all') params.type = filters.type;
+      if (filters.dateRange && filters.dateRange !== 'all') params.dateRange = filters.dateRange;
+      if (filters.minSize) params.minSize = filters.minSize;
+      if (filters.maxSize) params.maxSize = filters.maxSize;
+
+      const res = await api.get('/files/search', { params });
       set({
         searchResults: {
           files: res.data.files || [],
@@ -762,6 +916,36 @@ export const useDriveStore = create((set, get) => ({
       set({ storageStats: res.data.stats });
     } catch (err) {
       console.error('Storage stats error:', err);
+    }
+  },
+
+  // Save edited file content (Text/Code or Edited Image Canvas blob)
+  saveFileContentAction: async (fileId, contentOrBlob, filename = null) => {
+    try {
+      let res;
+      if (contentOrBlob instanceof Blob) {
+        const formData = new FormData();
+        formData.append('file', contentOrBlob, filename || 'edited_image.png');
+        res = await api.put(`/files/${fileId}/content`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+      } else {
+        res = await api.put(`/files/${fileId}/content`, { content: contentOrBlob });
+      }
+
+      const updated = res.data.file;
+      set((state) => ({
+        files: state.files.map((f) => (f._id === fileId ? { ...f, ...updated } : f)),
+        previewItem: state.previewItem?._id === fileId ? { ...state.previewItem, ...updated } : state.previewItem
+      }));
+
+      toast.success(`Saved new version (v${updated.currentVersion}) for "${updated.name}"`);
+      useAuthStore.getState().fetchMe();
+      return { success: true, file: updated };
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to save changes';
+      toast.error(msg);
+      return { success: false, message: msg };
     }
   }
 }));

@@ -1,6 +1,8 @@
 const Folder = require('../models/Folder');
 const File = require('../models/File');
+const User = require('../models/User');
 const cloudinary = require('../config/cloudinary');
+const { logActivity } = require('../utils/activityLogger');
 
 // @desc    Create a new folder
 // @route   POST /api/folders
@@ -31,6 +33,14 @@ const createFolder = async (req, res) => {
       parentFolder: parentFolderId || null,
       path: folderPath,
       color: color || '#7C3AED'
+    });
+
+    logActivity({
+      owner: req.user._id,
+      action: 'create_folder',
+      itemType: 'folder',
+      itemName: folder.name,
+      itemId: folder._id
     });
 
     res.status(201).json({
@@ -116,6 +126,7 @@ const renameFolder = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Folder not found' });
     }
 
+    const oldName = folder.name;
     folder.name = name.trim();
     await folder.save();
 
@@ -124,6 +135,15 @@ const renameFolder = async (req, res) => {
       { 'path._id': folder._id, owner: req.user._id },
       { $set: { 'path.$.name': name.trim() } }
     );
+
+    logActivity({
+      owner: req.user._id,
+      action: 'rename',
+      itemType: 'folder',
+      itemName: folder.name,
+      itemId: folder._id,
+      details: { oldName, newName: folder.name }
+    });
 
     res.json({
       success: true,
@@ -148,6 +168,14 @@ const toggleStarFolder = async (req, res) => {
 
     folder.isStarred = !folder.isStarred;
     await folder.save();
+
+    logActivity({
+      owner: req.user._id,
+      action: folder.isStarred ? 'star' : 'unstar',
+      itemType: 'folder',
+      itemName: folder.name,
+      itemId: folder._id
+    });
 
     res.json({
       success: true,
@@ -187,6 +215,14 @@ const trashFolder = async (req, res) => {
       { folderId: folder._id, owner: req.user._id },
       { $set: { isTrashed, trashedAt: isTrashed ? new Date() : null } }
     );
+
+    logActivity({
+      owner: req.user._id,
+      action: isTrashed ? 'trash' : 'restore',
+      itemType: 'folder',
+      itemName: folder.name,
+      itemId: folder._id
+    });
 
     res.json({
       success: true,
@@ -319,6 +355,15 @@ const moveFolder = async (req, res) => {
       }
     }
 
+    logActivity({
+      owner: req.user._id,
+      action: 'move',
+      itemType: 'folder',
+      itemName: folder.name,
+      itemId: folder._id,
+      details: { targetParentId: cleanParentId }
+    });
+
     res.json({
       success: true,
       message: 'Folder moved successfully',
@@ -327,6 +372,100 @@ const moveFolder = async (req, res) => {
   } catch (error) {
     console.error('Move folder error:', error);
     res.status(500).json({ success: false, message: 'Server error moving folder' });
+  }
+};
+
+// @desc    Copy / Duplicate a folder recursively
+// @route   POST /api/folders/copy
+// @access  Private
+const copyFolder = async (req, res) => {
+  try {
+    const { folderId, targetFolderId, newName } = req.body;
+    if (!folderId) {
+      return res.status(400).json({ success: false, message: 'folderId is required' });
+    }
+
+    const sourceFolder = await Folder.findOne({ _id: folderId, owner: req.user._id, isTrashed: false });
+    if (!sourceFolder) {
+      return res.status(404).json({ success: false, message: 'Source folder not found' });
+    }
+
+    const cleanParentId = targetFolderId && targetFolderId !== 'root' ? targetFolderId : null;
+    let targetParentPath = [];
+    if (cleanParentId) {
+      const parent = await Folder.findOne({ _id: cleanParentId, owner: req.user._id, isTrashed: false });
+      if (!parent) {
+        return res.status(404).json({ success: false, message: 'Target parent folder not found' });
+      }
+      targetParentPath = [...(parent.path || []), { _id: parent._id, name: parent.name }];
+    }
+
+    const rootFolderName = newName || `${sourceFolder.name} (Copy)`;
+
+    // Recursive helper to duplicate folder and all children
+    const duplicateFolderRecursive = async (srcFolder, newParentId, newParentPath, isRoot = false) => {
+      const folderDoc = await Folder.create({
+        name: isRoot ? rootFolderName : srcFolder.name,
+        owner: req.user._id,
+        parentFolder: newParentId,
+        path: newParentPath,
+        color: srcFolder.color || '#7C3AED',
+        tags: srcFolder.tags || []
+      });
+
+      const currentPath = [...newParentPath, { _id: folderDoc._id, name: folderDoc.name }];
+
+      // Duplicate files inside srcFolder
+      const filesInFolder = await File.find({ folderId: srcFolder._id, owner: req.user._id, isTrashed: false });
+      let addedStorage = 0;
+      for (const file of filesInFolder) {
+        await File.create({
+          name: file.name,
+          url: file.url,
+          publicId: file.publicId,
+          resourceType: file.resourceType,
+          format: file.format,
+          size: file.size,
+          mimetype: file.mimetype,
+          folderId: folderDoc._id,
+          owner: req.user._id,
+          tags: file.tags || []
+        });
+        addedStorage += file.size;
+      }
+
+      if (addedStorage > 0) {
+        await User.findByIdAndUpdate(req.user._id, { $inc: { storageUsed: addedStorage } });
+      }
+
+      // Duplicate subfolders
+      const subFolders = await Folder.find({ parentFolder: srcFolder._id, owner: req.user._id, isTrashed: false });
+      for (const sub of subFolders) {
+        await duplicateFolderRecursive(sub, folderDoc._id, currentPath, false);
+      }
+
+      return folderDoc;
+    };
+
+    const newRootFolder = await duplicateFolderRecursive(sourceFolder, cleanParentId, targetParentPath, true);
+
+    logActivity({
+      owner: req.user._id,
+      action: 'copy',
+      itemType: 'folder',
+      itemName: newRootFolder.name,
+      itemId: newRootFolder._id,
+      details: { originalName: sourceFolder.name }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `Folder copied as "${newRootFolder.name}"`,
+      folder: newRootFolder
+    });
+  } catch (error) {
+    console.error('Copy folder error:', error);
+    res.status(500).json({ success: false, message: 'Server error copying folder' });
   }
 };
 
@@ -339,5 +478,6 @@ module.exports = {
   trashFolder,
   deleteFolderPermanently,
   updateFolderTags,
-  moveFolder
+  moveFolder,
+  copyFolder
 };
