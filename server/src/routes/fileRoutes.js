@@ -29,7 +29,10 @@ const {
   bulkMove,
   copyFile,
   updateFileContent,
-  verifySharePassword
+  verifySharePassword,
+  getDuplicateFiles,
+  cleanDuplicateFiles,
+  purgeExpiredTrash
 } = require('../controllers/fileController');
 const { protect } = require('../middlewares/authMiddleware');
 const { upload } = require('../middlewares/uploadMiddleware');
@@ -42,6 +45,10 @@ router.post('/public/:shareToken/verify', verifySharePassword);
 router.use(protect);
 
 router.post('/copy', copyFile);
+
+// Duplicate Finder & Cleaner
+router.get('/duplicates', getDuplicateFiles);
+router.post('/duplicates/clean', cleanDuplicateFiles);
 
 router.post('/upload', upload.single('file'), uploadFile);
 router.put('/:id/content', upload.single('file'), updateFileContent);
@@ -59,6 +66,7 @@ router.get('/', getFiles);
 router.get('/starred', getStarredItems);
 router.get('/recent', getRecentFiles);
 router.get('/trash', getTrashItems);
+router.delete('/trash/purge-expired', purgeExpiredTrash);
 router.get('/search', searchItems);
 router.get('/storage-stats', getStorageStats);
 router.delete('/trash/empty', emptyTrash);

@@ -273,8 +273,16 @@ const searchItems = async (req, res) => {
 
     if (query) {
       const regex = new RegExp(query, 'i');
-      fileFilter.name = regex;
-      folderFilter.name = regex;
+      fileFilter.$or = [
+        { name: regex },
+        { ocrText: regex },
+        { aiSummary: regex },
+        { 'tags.name': regex }
+      ];
+      folderFilter.$or = [
+        { name: regex },
+        { 'tags.name': regex }
+      ];
     }
 
     // Type filter
@@ -1550,6 +1558,190 @@ const updateFileContent = async (req, res) => {
   }
 };
 
+// @desc    Find duplicate files across user's drive (by size & hash/name match)
+// @route   GET /api/files/duplicates
+// @access  Private
+const getDuplicateFiles = async (req, res) => {
+  try {
+    const files = await File.find({ owner: req.user._id, isTrashed: false })
+      .populate('folderId', 'name')
+      .sort({ size: -1, createdAt: -1 });
+
+    // Group files by size & file extension/content signature
+    const sizeGroups = {};
+    for (const f of files) {
+      if (f.size <= 0) continue;
+      // Key by exact size and extension
+      const ext = f.name.includes('.') ? f.name.split('.').pop().toLowerCase() : 'none';
+      const key = `${f.size}_${ext}`;
+
+      if (!sizeGroups[key]) {
+        sizeGroups[key] = [];
+      }
+      sizeGroups[key].push(f);
+    }
+
+    const duplicateGroups = [];
+    let potentialSavingsBytes = 0;
+    let duplicateFilesCount = 0;
+
+    for (const [key, group] of Object.entries(sizeGroups)) {
+      if (group.length > 1) {
+        const redundantCount = group.length - 1;
+        const groupSavings = group[0].size * redundantCount;
+        potentialSavingsBytes += groupSavings;
+        duplicateFilesCount += redundantCount;
+
+        duplicateGroups.push({
+          key,
+          size: group[0].size,
+          mimetype: group[0].mimetype,
+          extension: key.split('_')[1],
+          count: group.length,
+          redundantCount,
+          potentialSavingsBytes: groupSavings,
+          files: group.map((item) => ({
+            _id: item._id,
+            name: item.name,
+            size: item.size,
+            url: item.url,
+            mimetype: item.mimetype,
+            folderName: item.folderId ? item.folderId.name : 'My Drive',
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt
+          }))
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      totalGroups: duplicateGroups.length,
+      duplicateFilesCount,
+      potentialSavingsBytes,
+      groups: duplicateGroups
+    });
+  } catch (error) {
+    console.error('Get duplicates error:', error);
+    res.status(500).json({ success: false, message: 'Server error analyzing duplicate files' });
+  }
+};
+
+// @desc    Clean / Delete selected duplicate files in bulk
+// @route   POST /api/files/duplicates/clean
+// @access  Private
+const cleanDuplicateFiles = async (req, res) => {
+  try {
+    const { fileIds = [] } = req.body;
+    if (!Array.isArray(fileIds) || fileIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'No file IDs provided to clean' });
+    }
+
+    const files = await File.find({
+      _id: { $in: fileIds },
+      owner: req.user._id
+    });
+
+    if (files.length === 0) {
+      return res.status(404).json({ success: false, message: 'No matching files found' });
+    }
+
+    let totalCleanedBytes = 0;
+    for (const file of files) {
+      totalCleanedBytes += file.size || 0;
+      // Delete Cloudinary asset
+      if (file.publicId) {
+        try {
+          await cloudinary.uploader.destroy(file.publicId, {
+            resource_type: file.resourceType || 'auto'
+          });
+        } catch (cErr) {
+          console.warn('Cloudinary delete warning during duplicate clean:', cErr.message);
+        }
+      }
+      await File.findByIdAndDelete(file._id);
+    }
+
+    // Update user storage
+    await User.findByIdAndUpdate(req.user._id, {
+      $inc: { storageUsed: -totalCleanedBytes }
+    });
+
+    logActivity({
+      owner: req.user._id,
+      action: 'delete',
+      itemType: 'file',
+      itemName: `${files.length} duplicate file(s)`,
+      details: { count: files.length, reclaimedBytes: totalCleanedBytes }
+    });
+
+    res.json({
+      success: true,
+      message: `Successfully cleaned ${files.length} duplicate files and reclaimed ${(totalCleanedBytes / (1024 * 1024)).toFixed(2)} MB!`,
+      cleanedCount: files.length,
+      reclaimedBytes: totalCleanedBytes
+    });
+  } catch (error) {
+    console.error('Clean duplicates error:', error);
+    res.status(500).json({ success: false, message: 'Server error cleaning duplicate files' });
+  }
+};
+
+// @desc    Purge trash items older than 30 days (Auto-Empty Retention)
+// @route   DELETE /api/files/trash/purge-expired
+// @access  Private
+const purgeExpiredTrash = async (req, res) => {
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    const expiredFiles = await File.find({
+      owner: req.user._id,
+      isTrashed: true,
+      trashedAt: { $lte: thirtyDaysAgo }
+    });
+
+    let reclaimedBytes = 0;
+    for (const file of expiredFiles) {
+      reclaimedBytes += file.size || 0;
+      if (file.publicId) {
+        try {
+          await cloudinary.uploader.destroy(file.publicId, { resource_type: file.resourceType || 'auto' });
+        } catch (cErr) {
+          console.warn('Cloudinary trash cleanup error:', cErr.message);
+        }
+      }
+      await File.findByIdAndDelete(file._id);
+    }
+
+    const expiredFolders = await Folder.find({
+      owner: req.user._id,
+      isTrashed: true,
+      trashedAt: { $lte: thirtyDaysAgo }
+    });
+
+    for (const folder of expiredFolders) {
+      await Folder.findByIdAndDelete(folder._id);
+    }
+
+    if (reclaimedBytes > 0) {
+      await User.findByIdAndUpdate(req.user._id, {
+        $inc: { storageUsed: -reclaimedBytes }
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Purged ${expiredFiles.length} expired file(s) and ${expiredFolders.length} folder(s).`,
+      purgedFilesCount: expiredFiles.length,
+      purgedFoldersCount: expiredFolders.length,
+      reclaimedBytes
+    });
+  } catch (error) {
+    console.error('Purge expired trash error:', error);
+    res.status(500).json({ success: false, message: 'Server error running trash retention purge' });
+  }
+};
+
 module.exports = {
   uploadFile,
   getFiles,
@@ -1580,5 +1772,8 @@ module.exports = {
   downloadFolderZip,
   uploadChunk,
   moveFile,
-  bulkMove
+  bulkMove,
+  getDuplicateFiles,
+  cleanDuplicateFiles,
+  purgeExpiredTrash
 };

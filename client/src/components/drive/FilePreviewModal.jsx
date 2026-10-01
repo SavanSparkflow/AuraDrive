@@ -11,7 +11,8 @@ import {
   FileCode,
   Crop,
   Highlighter,
-  Play
+  Play,
+  Sparkles
 } from 'lucide-react';
 import { useDriveStore } from '../../store/driveStore';
 import { getFileTypeCategory, getFileIcon } from '../../utils/fileHelpers';
@@ -28,7 +29,8 @@ export default function FilePreviewModal() {
     setTextEditorItem,
     setImageEditorItem,
     setPdfViewerItem,
-    setMediaPlayerItem
+    setMediaPlayerItem,
+    setAiModalItem
   } = useDriveStore();
 
   if (!previewItem) return null;
@@ -83,6 +85,20 @@ export default function FilePreviewModal() {
 
           {/* Action Buttons */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* AI Document Assistant Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              icon={Sparkles}
+              onClick={() => {
+                const item = previewItem;
+                setPreviewItem(null);
+                setAiModalItem(item);
+              }}
+              className="text-xs border-purple-200 text-purple-700 bg-purple-50 hover:bg-purple-100 shadow-sm"
+            >
+              {previewItem.mimetype?.startsWith('image/') ? 'AI Vision OCR' : '✨ AI Assistant'}
+            </Button>
             {/* Contextual Editor Launcher */}
             {(previewItem.name?.match(/\.(txt|md|js|jsx|ts|tsx|json|html|css|py|env|csv|sql|xml|yaml|yml)$/i) || previewItem.mimetype?.includes('text') || previewItem.mimetype?.includes('json')) && (
               <Button

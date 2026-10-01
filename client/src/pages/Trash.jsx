@@ -60,6 +60,16 @@ export default function Trash() {
         )}
       </div>
 
+      {/* 30-Day Auto Retention Banner */}
+      <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-center justify-between gap-3 text-amber-900 text-xs">
+        <div className="flex items-center gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+          <span>
+            <strong>Auto-Empty Retention Policy:</strong> Items in Trash for longer than 30 days are automatically purged permanently to maintain optimal cloud storage.
+          </span>
+        </div>
+      </div>
+
       {isLoading ? (
         <div className="py-24 flex flex-col items-center justify-center text-slate-400 gap-3">
           <Loader2 className="w-8 h-8 animate-spin text-brand-600" />

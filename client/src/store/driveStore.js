@@ -71,12 +71,22 @@ export const useDriveStore = create((set, get) => ({
   moveModalItem: null, // { item, type: 'file' | 'folder', isBulk?: boolean }
   isDownloadingZip: false,
 
-  // Standout In-App Interactive Tools
+  // Standout In-App Interactive Tools & AI
   textEditorItem: null, // File object for in-app code/markdown/text editor
   imageEditorItem: null, // File object for in-app image cropper/filter editor
   pdfViewerItem: null, // File object for in-app PDF annotator
   mediaPlayerItem: null, // File object for video streaming player
   activeAudioTrack: null, // Track object for background audio player
+  aiModalItem: null, // File object for AI Document Summarizer / Chat / Vision OCR
+  isAiModalOpen: false,
+
+  // Storage Optimizer & Duplicate Cleaner
+  isStorageOptimizerOpen: false,
+  duplicateGroups: [],
+  potentialSavingsBytes: 0,
+  duplicateFilesCount: 0,
+  isScanningDuplicates: false,
+  isCleaningDuplicates: false,
 
   // Setters
   setViewMode: (mode) => {
@@ -103,6 +113,9 @@ export const useDriveStore = create((set, get) => ({
   setActiveAudioTrack: (track) => set({ activeAudioTrack: track }),
   setIsActivityOpen: (isOpen) => set({ isActivityOpen: isOpen }),
   setIsStorageAnalyticsOpen: (isOpen) => set({ isStorageAnalyticsOpen: isOpen }),
+  setAiModalItem: (item) => set({ aiModalItem: item, isAiModalOpen: !!item }),
+  setIsAiModalOpen: (isOpen) => set({ isAiModalOpen: isOpen, aiModalItem: isOpen ? get().aiModalItem : null }),
+  setIsStorageOptimizerOpen: (isOpen) => set({ isStorageOptimizerOpen: isOpen }),
 
   // Context Menu controls
   openContextMenu: (e, item = null, type = 'file') => {
@@ -946,6 +959,112 @@ export const useDriveStore = create((set, get) => ({
       const msg = err.response?.data?.message || 'Failed to save changes';
       toast.error(msg);
       return { success: false, message: msg };
+    }
+  },
+
+  // AI Document Assistant Actions (Pollinations AI)
+  summarizeFileAction: async (fileId) => {
+    try {
+      const res = await api.post('/ai/summarize', { fileId });
+      if (res.data?.summary) {
+        // Update cached summary in local state
+        set((state) => ({
+          files: state.files.map((f) => (f._id === fileId ? { ...f, aiSummary: res.data.summary } : f)),
+          aiModalItem: state.aiModalItem?._id === fileId ? { ...state.aiModalItem, aiSummary: res.data.summary } : state.aiModalItem
+        }));
+      }
+      return { success: true, summary: res.data.summary };
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to summarize document';
+      toast.error(msg);
+      return { success: false, message: msg };
+    }
+  },
+
+  chatWithFileAction: async (fileId, messages, question) => {
+    try {
+      const res = await api.post('/ai/chat', { fileId, messages, question });
+      return { success: true, reply: res.data.reply };
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to get answer from AI';
+      toast.error(msg);
+      return { success: false, message: msg };
+    }
+  },
+
+  ocrFileAction: async (fileId) => {
+    try {
+      const res = await api.post('/ai/ocr', { fileId });
+      if (res.data?.ocrText) {
+        set((state) => ({
+          files: state.files.map((f) => (f._id === fileId ? { ...f, ocrText: res.data.ocrText } : f)),
+          aiModalItem: state.aiModalItem?._id === fileId ? { ...state.aiModalItem, ocrText: res.data.ocrText } : state.aiModalItem
+        }));
+      }
+      return { success: true, ocrText: res.data.ocrText };
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to extract text from image';
+      toast.error(msg);
+      return { success: false, message: msg };
+    }
+  },
+
+  // Storage Optimizer & Duplicate Finder Actions
+  fetchDuplicatesAction: async () => {
+    set({ isScanningDuplicates: true });
+    try {
+      const res = await api.get('/files/duplicates');
+      set({
+        duplicateGroups: res.data.groups || [],
+        potentialSavingsBytes: res.data.potentialSavingsBytes || 0,
+        duplicateFilesCount: res.data.duplicateFilesCount || 0,
+        isScanningDuplicates: false
+      });
+      return { success: true, data: res.data };
+    } catch (err) {
+      set({ isScanningDuplicates: false });
+      toast.error('Failed to analyze duplicates');
+      return { success: false };
+    }
+  },
+
+  cleanDuplicatesAction: async (fileIds) => {
+    if (!fileIds || fileIds.length === 0) {
+      toast.error('No duplicates selected to clean');
+      return { success: false };
+    }
+    set({ isCleaningDuplicates: true });
+    try {
+      const res = await api.post('/files/duplicates/clean', { fileIds });
+      toast.success(res.data.message || 'Duplicates cleaned successfully');
+
+      // Refresh drive files, stats, and duplicates list
+      get().fetchFiles(get().currentFolder?._id || null);
+      get().fetchStorageStats();
+      get().fetchDuplicatesAction();
+      useAuthStore.getState().fetchMe();
+
+      set({ isCleaningDuplicates: false });
+      return { success: true, data: res.data };
+    } catch (err) {
+      set({ isCleaningDuplicates: false });
+      const msg = err.response?.data?.message || 'Failed to clean duplicates';
+      toast.error(msg);
+      return { success: false, message: msg };
+    }
+  },
+
+  purgeExpiredTrashAction: async () => {
+    try {
+      const res = await api.delete('/files/trash/purge-expired');
+      toast.success(res.data.message || 'Retention purge completed');
+      get().fetchTrash();
+      get().fetchStorageStats();
+      useAuthStore.getState().fetchMe();
+      return { success: true, data: res.data };
+    } catch (err) {
+      toast.error('Failed to run retention purge');
+      return { success: false };
     }
   }
 }));

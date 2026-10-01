@@ -41,7 +41,8 @@ export default function Navbar({ onMenuToggle, isMobileMenuOpen }) {
     isSearchFilterOpen,
     setIsSearchFilterOpen,
     setIsActivityOpen,
-    setIsStorageAnalyticsOpen
+    setIsStorageAnalyticsOpen,
+    setIsStorageOptimizerOpen
   } = useDriveStore();
 
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -335,6 +336,17 @@ export default function Navbar({ onMenuToggle, isMobileMenuOpen }) {
           className="p-2 text-slate-600 hover:text-brand-600 hover:bg-slate-100 rounded-xl transition-colors"
         >
           <PieChart className="w-5 h-5" />
+        </button>
+
+        {/* Storage Optimizer & Duplicate Cleaner Button */}
+        <button
+          type="button"
+          onClick={() => setIsStorageOptimizerOpen(true)}
+          title="Storage Optimizer & Duplicate Cleaner"
+          className="p-2 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors relative"
+        >
+          <HardDrive className="w-5 h-5" />
+          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
         </button>
 
         {/* Grid / List View Toggle */}

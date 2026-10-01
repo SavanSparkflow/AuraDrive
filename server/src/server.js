@@ -38,6 +38,41 @@ app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/folders', require('./routes/folderRoutes'));
 app.use('/api/files', require('./routes/fileRoutes'));
 app.use('/api/activities', require('./routes/activityRoutes'));
+app.use('/api/ai', require('./routes/aiRoutes'));
+
+// Background Auto-Empty Trash Policy (runs every 6 hours to purge > 30-day-old trash)
+const File = require('./models/File');
+const Folder = require('./models/Folder');
+const User = require('./models/User');
+const { cloudinary } = require('./config/cloudinary');
+
+async function runAutoTrashPurge() {
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const expiredFiles = await File.find({ isTrashed: true, trashedAt: { $lte: thirtyDaysAgo } });
+
+    if (expiredFiles.length > 0) {
+      console.log(`[Auto-Trash Worker] Found ${expiredFiles.length} files older than 30 days. Purging...`);
+      for (const f of expiredFiles) {
+        if (f.publicId) {
+          try {
+            await cloudinary.uploader.destroy(f.publicId, { resource_type: f.resourceType || 'auto' });
+          } catch (_) {}
+        }
+        await User.findByIdAndUpdate(f.owner, { $inc: { storageUsed: -(f.size || 0) } });
+        await File.findByIdAndDelete(f._id);
+      }
+    }
+
+    await Folder.deleteMany({ isTrashed: true, trashedAt: { $lte: thirtyDaysAgo } });
+  } catch (err) {
+    console.warn('[Auto-Trash Worker] Notice:', err.message);
+  }
+}
+
+// Run once 10 seconds after boot, then every 6 hours
+setTimeout(runAutoTrashPurge, 10000);
+setInterval(runAutoTrashPurge, 6 * 60 * 60 * 1000);
 
 // 404 handler
 app.use((req, res) => {

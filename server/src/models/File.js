@@ -100,7 +100,20 @@ const fileSchema = new mongoose.Schema(
         mimetype: { type: String, required: true },
         uploadedAt: { type: Date, default: Date.now }
       }
-    ]
+    ],
+    ocrText: {
+      type: String,
+      default: ''
+    },
+    aiSummary: {
+      type: String,
+      default: ''
+    },
+    checksum: {
+      type: String,
+      default: null,
+      index: true
+    }
   },
   {
     timestamps: true
@@ -109,6 +122,6 @@ const fileSchema = new mongoose.Schema(
 
 // Compound index for queries
 fileSchema.index({ owner: 1, folderId: 1, isTrashed: 1 });
-fileSchema.index({ name: 'text' });
+fileSchema.index({ name: 'text', ocrText: 'text', aiSummary: 'text' });
 
 module.exports = mongoose.model('File', fileSchema);

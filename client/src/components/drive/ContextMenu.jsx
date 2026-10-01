@@ -19,7 +19,10 @@ import {
   Crop,
   Highlighter,
   Play,
-  FileCode
+  FileCode,
+  Sparkles,
+  Zap,
+  HardDrive
 } from 'lucide-react';
 import { useDriveStore } from '../../store/driveStore';
 
@@ -45,7 +48,9 @@ export default function ContextMenu() {
     setTextEditorItem,
     setImageEditorItem,
     setPdfViewerItem,
-    setMediaPlayerItem
+    setMediaPlayerItem,
+    setAiModalItem,
+    setIsStorageOptimizerOpen
   } = useDriveStore();
 
   const menuRef = useRef(null);
@@ -75,7 +80,7 @@ export default function ContextMenu() {
 
   // Adjust menu position so it doesn't overflow screen bounds
   const menuWidth = 220;
-  const menuHeight = type === 'file' ? 340 : type === 'folder' ? 300 : 180;
+  const menuHeight = type === 'file' ? 380 : type === 'folder' ? 300 : 200;
   const adjustedX = Math.min(x, window.innerWidth - menuWidth - 16);
   const adjustedY = Math.min(y, window.innerHeight - menuHeight - 16);
 
@@ -118,6 +123,21 @@ export default function ContextMenu() {
               <Eye className="w-4 h-4 text-slate-500" />
               <span>Quick Preview</span>
             </div>
+          </button>
+
+          {/* AI Document Assistant Trigger */}
+          <button
+            onClick={() => {
+              closeContextMenu();
+              setAiModalItem(item);
+            }}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 text-brand-700 font-semibold transition-colors"
+          >
+            <div className="flex items-center gap-2.5">
+              <Sparkles className="w-4 h-4 text-brand-600 animate-pulse" />
+              <span>{item.mimetype?.startsWith('image/') ? 'AI Vision OCR' : 'Ask AI & Summarize'}</span>
+            </div>
+            <span className="text-[9px] bg-brand-200/80 text-brand-800 px-1.5 py-0.5 rounded font-bold">AI</span>
           </button>
 
           {/* Contextual In-App Tools */}
@@ -448,6 +468,20 @@ export default function ContextMenu() {
               <span className="text-[10px] text-slate-400 font-mono">Ctrl+V</span>
             </button>
           )}
+
+          <button
+            onClick={() => {
+              closeContextMenu();
+              setIsStorageOptimizerOpen(true);
+            }}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-emerald-50/70 hover:bg-emerald-100/80 text-emerald-700 font-semibold transition-colors"
+          >
+            <div className="flex items-center gap-2.5">
+              <HardDrive className="w-4 h-4 text-emerald-600" />
+              <span>Clean Duplicates</span>
+            </div>
+            <span className="text-[9px] bg-emerald-200/80 text-emerald-800 px-1.5 py-0.5 rounded font-bold">OPTIMIZE</span>
+          </button>
 
           <button
             onClick={() => {

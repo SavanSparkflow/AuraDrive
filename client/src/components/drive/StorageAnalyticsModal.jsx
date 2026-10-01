@@ -22,7 +22,8 @@ export default function StorageAnalyticsModal() {
     setIsStorageAnalyticsOpen,
     storageStats,
     fetchStorageStats,
-    emptyTrashAction
+    emptyTrashAction,
+    setIsStorageOptimizerOpen
   } = useDriveStore();
 
   useEffect(() => {
@@ -142,24 +143,37 @@ export default function StorageAnalyticsModal() {
           </div>
 
           {/* Quick Cleanup Actions */}
-          <div className="bg-brand-50/50 border border-brand-100 rounded-2xl p-4 flex items-center justify-between gap-3">
+          <div className="bg-brand-50/50 border border-brand-100 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <Sparkles className="w-4 h-4 text-brand-600 shrink-0" />
               <p className="text-xs text-brand-900 font-medium">
-                Need more free space? Empty trash or clean up old versions.
+                Need more free space? Clean duplicate files or empty trash.
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              icon={Trash2}
-              onClick={() => {
-                emptyTrashAction();
-              }}
-              className="shrink-0 text-xs border-brand-200 hover:bg-brand-100 text-brand-800"
-            >
-              Empty Trash
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setIsStorageAnalyticsOpen(false);
+                  setIsStorageOptimizerOpen(true);
+                }}
+                className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                Clean Duplicates
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={Trash2}
+                onClick={() => {
+                  emptyTrashAction();
+                }}
+                className="text-xs border-brand-200 hover:bg-brand-100 text-brand-800"
+              >
+                Empty Trash
+              </Button>
+            </div>
           </div>
         </div>
 

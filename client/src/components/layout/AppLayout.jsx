@@ -21,6 +21,8 @@ import ImageEditorModal from '../drive/ImageEditorModal';
 import PdfViewerModal from '../drive/PdfViewerModal';
 import MediaPlayerModal from '../drive/MediaPlayerModal';
 import FloatingAudioPlayer from '../drive/FloatingAudioPlayer';
+import AiDocumentModal from '../drive/AiDocumentModal';
+import StorageOptimizerModal from '../drive/StorageOptimizerModal';
 import { useDriveStore } from '../../store/driveStore';
 
 export default function AppLayout() {
@@ -226,12 +228,14 @@ export default function AppLayout() {
       <TagModal />
       <MoveModal />
 
-      {/* Standout In-App Interactive Tools */}
+      {/* Standout In-App Interactive Tools & AI */}
       <TextEditorModal />
       <ImageEditorModal />
       <PdfViewerModal />
       <MediaPlayerModal />
       <FloatingAudioPlayer />
+      <AiDocumentModal />
+      <StorageOptimizerModal />
     </div>
   );
 }

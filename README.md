@@ -1,15 +1,42 @@
-# 🌌 AuraDrive — Next-Generation Cloud Storage & Productivity Suite
+# 🌌 AuraDrive — Next-Generation Cloud Storage, AI Assistant & Productivity Suite
 
-> A modern, enterprise-grade cloud storage and file management platform inspired by Google Drive with ultra-clean **Violet & Slate** SaaS aesthetics. Built on the MERN stack with Cloudinary CDN integration, AuraDrive pairs deep file organization (hierarchical trees, versioning, drag-and-drop, ZIP archiving) with standout interactive tools (In-app Code Editor, Photo Studio, PDF Annotator, Video/Audio Player, and Password-Protected Sharing).
+> A modern, enterprise-grade cloud storage and file management platform inspired by Google Drive with ultra-clean **Violet & Slate** SaaS aesthetics. Built on the MERN stack with Cloudinary CDN integration, AuraDrive pairs deep file organization (hierarchical trees, versioning, drag-and-drop, ZIP archiving) with standout interactive tools (AI Document Summarizer, Chat with Files, High-Speed Vision OCR, In-app Code Editor, Photo Studio, PDF Annotator, Video/Audio Streaming Player, Storage Optimizer & Password-Protected Sharing).
 
 ---
 
 ## ✨ Key Features & Capabilities
 
-### ⚡ 1. Power-User Productivity & Shortcuts
+### 🤖 1. AI-Powered Smart Drive (Pollinations AI + Tesseract OCR Engine)
+- **📄 AI Document & PDF Summarizer:**
+  - 1-click executive summary generator for PDFs, documents, notes, code, and text files.
+  - Automatically extracts **📌 Executive Summary**, **✨ Key Bullet Highlights**, **🏷️ Thematic Hashtags**, and **⏱️ Estimated Reading Time**.
+  - Summaries are saved with the file and indexed for lightning-fast full-text search.
+- **💬 Chat with Document (Ask AI):**
+  - Interactive Q&A conversational interface about any document or image context.
+  - Fast suggested prompt chips (*"What are the main points?"*, *"List action items"*, *"Explain technical terms"*).
+  - Clean HTML / Markdown rendering with structured tables, bullet highlights, and code blocks.
+- **🔍 Native AI Vision OCR (Image-to-Text):**
+  - High-precision visual text extraction from screenshots, receipts, invoices, and infographics using local high-speed Tesseract OCR.
+  - Extracted text is stored in file metadata and fully searchable across the drive.
+
+---
+
+### 🧹 2. Storage Optimizer & Duplicate File Finder
+- **⚡ 1-Click Duplicate Cleaner:**
+  - Analyzes file sizes, formats, and checksum signatures across your entire drive to identify redundant duplicate clusters.
+  - Displays potential reclaimable storage space in real time.
+  - Smart selection filters: **Keep Newest Only**, **Keep Oldest Only**, **Select All**.
+  - 1-click batch deletion to free up quota.
+- **🗑️ 30-Day Auto-Empty Trash Policy:**
+  - Automated background worker purges trashed items older than 30 days every 6 hours.
+  - Manual "Purge Expired" button on-demand with clean UI retention banners.
+
+---
+
+### ⚡ 3. Power-User Productivity & Shortcuts
 - **🖱️ Right-Click Context Menu:**
   - Context menu across Files, Folders, and empty Canvas space.
-  - Quick access to Download, In-App Editors, Rename, Copy, Paste, Move, Tags, Version History, Share, Star, and Trash.
+  - Quick access to AI Assistant, Download, In-App Editors, Rename, Copy, Paste, Move, Tags, Version History, Share, Star, and Trash.
 - **⌨️ Global Keyboard Shortcuts:**
   - `Ctrl + C` / `Ctrl + V`: Instant copy & paste for files and recursive folder trees.
   - `Delete`: Move selected items directly to Trash.
@@ -21,7 +48,7 @@
 
 ---
 
-### 🛠️ 2. In-App Interactive Standout Tools (Zero Downloads Required)
+### 🛠️ 4. In-App Interactive Standout Tools (Zero Downloads Required)
 - **📝 In-App Code, Markdown & Text Editor:**
   - Live in-browser editing for `.txt`, `.md`, `.js`, `.json`, `.css`, `.html`, `.ts`, and `.py`.
   - Split-screen live Markdown preview, line numbering, character/word counters, and dark theme.
@@ -43,8 +70,8 @@
 
 ---
 
-### 🔍 3. Global Full-Text Search & Multi-Filter Studio
-- **Deep Search:** Search items instantly by name or extension across the entire drive hierarchy.
+### 🔍 5. Global Full-Text Search & Multi-Filter Studio
+- **Deep Search:** Search items instantly by name, extension, AI summaries, or OCR image text across the entire drive hierarchy.
 - **Multi-Criteria Filter Modal:**
   - **File Category:** All, Images, Videos, Audio, Documents, PDFs, Code / Text.
   - **Date Modified:** Anytime, Today, Past 7 Days, Past 30 Days, Past Year.
@@ -52,7 +79,7 @@
 
 ---
 
-### 📜 4. Activity Audit Logs & Storage Analytics
+### 📜 6. Activity Audit Logs & Storage Analytics
 - **📜 Live Activity & Audit Log Drawer:**
   - Complete chronological timeline of every user event: Uploads, Renames, Moves, Copies, Stars, Shares, Tags, and Trash operations.
   - Auto-backfill engine ensures past files are automatically indexed.
@@ -61,7 +88,7 @@
 
 ---
 
-### 🔒 5. Advanced Share Security & Access Control
+### 🔒 7. Advanced Share Security & Access Control
 - **🔑 Password-Protected Public Links:**
   - Secure shared files with bcrypt-hashed passwords.
   - Public recipients are prompted with a sleek password verification unlock modal.
@@ -71,7 +98,7 @@
 
 ---
 
-### 📁 6. Hierarchical Directory & Organization
+### 📁 8. Hierarchical Directory & Organization
 - **Hierarchical Directory Tree:** Create unlimited nested subfolders with custom color themes and automatic path inheritance.
 - **Drag & Drop Move:** Drag files or folders directly onto folder cards or breadcrumb paths.
 - **Smart Collapsing Breadcrumbs:** Automatic ellipsis (`...`) dropdown menu for deep subfolder structures.
@@ -89,6 +116,7 @@
 - **Framework:** React 18 & Vite
 - **Styling:** Tailwind CSS (Custom Dark / Slate & Violet SaaS palette)
 - **State Management:** Zustand (Auth Store & Drive Store)
+- **Markdown & Content Engine:** React Markdown, Remark GFM
 - **Icons & UI:** Lucide React, React Hot Toast
 - **File Ingestion:** React Dropzone, HTML5 Canvas API
 - **Networking:** Axios with automatic JWT Bearer token interceptor
@@ -96,6 +124,9 @@
 
 ### Backend (`/server`)
 - **Runtime:** Node.js & Express
+- **AI Engine:** Pollinations.ai (Free High-Speed Text & Conversational AI)
+- **OCR Engine:** Tesseract.js (Native Image Character Recognition)
+- **PDF Engine:** pdf-parse
 - **Database:** MongoDB & Mongoose
 - **Cloud Storage:** Cloudinary SDK & Multer (Streaming upload buffer)
 - **Archive Generator:** Archiver (Streaming server-side ZIP creation)
@@ -149,6 +180,13 @@ npm run dev
 
 ## 📡 API Reference
 
+### 🤖 AI Engine (`/api/ai`)
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/ai/summarize` | Generate structured AI summary for file (Pollinations.ai + OCR) |
+| `POST` | `/api/ai/chat` | Chat with document / contextual Q&A |
+| `POST` | `/api/ai/ocr` | Extract text from image via Tesseract OCR Engine |
+
 ### 🔐 Authentication (`/api/auth`)
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
@@ -186,10 +224,13 @@ npm run dev
 | `POST` | `/api/files/:id/copy` | Clone / duplicate a single file |
 | `POST` | `/api/files/public/:shareToken/verify-password` | Verify password on protected shared link |
 | `GET` | `/api/files?folderId=...&type=...` | Get files with type filtering |
-| `GET` | `/api/files/search` | Full-text search with type, date, and size filters |
+| `GET` | `/api/files/duplicates` | Detect duplicate file clusters & potential storage savings |
+| `POST` | `/api/files/duplicates/clean` | 1-Click clean selected duplicate files |
+| `GET` | `/api/files/search` | Full-text search across names, AI summaries & OCR text |
 | `GET` | `/api/files/starred` | Get starred items |
 | `GET` | `/api/files/recent` | Get recently active items |
 | `GET` | `/api/files/trash` | Get trashed items |
+| `DELETE` | `/api/files/trash/purge-expired` | Purge trash items older than 30 days |
 | `GET` | `/api/files/storage-stats` | Real-time storage usage breakdown |
 | `GET` | `/api/files/public/:shareToken` | Public preview of shared file |
 | `GET` | `/api/files/:id/versions` | Get file version history |
@@ -222,6 +263,7 @@ AuraDrive/
 │   │   ├── components/
 │   │   │   ├── common/         # Button, Input, Modal, Dropdown
 │   │   │   ├── drive/          # FileCard, FolderCard, ContextMenu, QuickAccessBar, 
+│   │   │   │                   # AiDocumentModal, StorageOptimizerModal,
 │   │   │   │                   # TextEditorModal, ImageEditorModal, PdfViewerModal, 
 │   │   │   │                   # MediaPlayerModal, FloatingAudioPlayer, ActivityDrawer,
 │   │   │   │                   # StorageAnalyticsModal, MoveModal, TagModal, VersionHistoryModal
@@ -234,12 +276,12 @@ AuraDrive/
 ├── server/                     # Backend (Node.js + Express + MongoDB)
 │   ├── src/
 │   │   ├── config/             # Cloudinary & MongoDB connections
-│   │   ├── controllers/        # Auth, File, Folder, and Activity controllers
+│   │   ├── controllers/        # Auth, File, Folder, Activity, and AI controllers
 │   │   ├── middlewares/        # JWT Auth, Multer, Error handlers
 │   │   ├── models/             # User, File, Folder, and Activity Mongoose models
-│   │   ├── routes/             # Auth, File, Folder, and Activity express routes
+│   │   ├── routes/             # Auth, File, Folder, Activity, and AI express routes
 │   │   ├── utils/              # Activity logger, async handlers
-│   │   └── server.js           # Express app entrypoint
+│   │   └── server.js           # Express app entrypoint & Auto-trash retention worker
 │   └── package.json
 └── README.md
 ```
